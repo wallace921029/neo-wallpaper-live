@@ -24,7 +24,7 @@ neowallpaperlive exit                     # 恢复静态壁纸
 | 同一视频在**所有显示器**上播放，帧同步 | 一个 `mpv` 进程、一次解码、N 块屏 |
 | 每块屏 **cover** 填充（默认） | 各自居中裁切；也提供 `contain`、`stretch` |
 | 混合分辨率与**分数缩放** | 已在两块 150 % 缩放的 4K 屏上验证 |
-| 清晰度由**最好的那块屏**决定 | 合成器会把渲染窗口的 surface 限制在它所在显示器的大小，因此窗口被钉在物理像素最多的显示器上——1080p 的笔记本内屏不会拖累外接的 4K 屏 |
+| 清晰度由**最好的那块屏**决定 | 合成器会把渲染窗口的 surface 限制在所在显示器的工作区大小，因此窗口被钉在可用物理工作区最大的显示器上（面积相同时优先无顶栏/Dock 挤占的副屏）——1080p 笔记本内屏或被系统栏缩小的屏幕不会拖累外接 4K 屏 |
 | **热插拔**——插拔坞站、外接 1 块或 3 块 | 播放不会重启，图层自动跟随显示器 |
 | 位于 GNOME 的**背景层** | 不受"显示桌面"、切换工作区、Alt+Tab、Dock 影响；概览里的工作区预览和工作区切换动画中也有视频 |
 | 不抢输入 | 桌面右键、框选图标一切正常 |
@@ -142,6 +142,7 @@ neowallpaperlive uninstall
 | 绿屏 / 花屏 | 试 `neowallpaperlive mpv-args --vo=gpu-next`，或用 `--hwdec=no` 排除解码器问题。 |
 | `awake on` 了但屏幕还是会黑 / 电脑还是会睡 | `neowallpaperlive status` 里播放期间 `keepAwake.active` 必须是 `true`。若 `error` 有值，说明 gnome-session 没在运行（非 GNOME 会话）。用 `gnome-session-inhibit --list` 看其他 inhibitor。 |
 | 新插的显示器上没有视频 | `neowallpaperlive status` 的 `monitors` 应列出它且 `layers` ≥ 显示器数；否则 `neowallpaperlive exit && neowallpaperlive start`。 |
+| 副屏右侧或下方出现撕裂条/未铺满 | 更新后请注销并重新登录。GNOME Shell 仅在登录时载入扩展新代码，工作区吸附修复需要重登生效。 |
 
 日志：`journalctl --user -f _COMM=gnome-shell | grep NeoWallpaperLive`。
 
@@ -157,7 +158,7 @@ mpv（隐藏、已最小化、硬件解码、按视频原始尺寸渲染）
        └─ Clutter.Clone → ……
 ```
 
-渲染窗口始终被钉在物理像素最多的显示器上（`宽 × 高 × 缩放²`），显示器变化时重新钉：Wayland surface 的尺寸受所在输出限制，窗口留在小屏上会把所有其它屏的分辨率一起拉低。`neowallpaperlive status` 里的 `rendererMonitor` 和 `rendererBuffer` 可以看到当前情况。
+渲染窗口始终被钉在可用物理工作区最大的显示器上（`工作区宽 × 工作区高 × 缩放²`，分辨率相同时优先选择副屏以避开顶栏与 Dock 的占位），显示器变化时重新钉：Mutter 会将 Wayland surface 限制在所在输出的工作区内，若留在小屏或被系统面板挤占的屏幕上，会导致其它屏幕分辨率被拉低甚至边缘撕裂截断。`neowallpaperlive status` 里的 `rendererMonitor` 和 `rendererBuffer` 可以看到当前情况。
 
 扩展包裹了 `BackgroundManager._createBackgroundActor`，于是 GNOME 创建的每一个背景 actor——桌面主图层、工作区切换动画里的滑动副本、概览里的缩放副本——都会得到一个渲染窗口的 `Clutter.Clone`。Clutter 会让拥有已映射 clone 的 actor 保持映射状态，所以 Mutter 持续给已最小化的 mpv 窗口发 frame callback，mpv 也就持续出帧。再加几个薄薄的、可撤销的补丁，把渲染窗口从 Alt+Tab、概览、工作区缩略图、Dock 和窗口动画中隐藏掉。
 
@@ -187,7 +188,7 @@ tools/regression.sh smoke sleep # 只跑这两个
 tools/headless-test.sh smoke    # 单个场景，输出原始表格
 ```
 
-场景：`smoke`（播放、隐身、工作区、概览、填充模式、exit/start）、`soak`（持续播放）、`autopause`（窗口盖屏、全屏）、`pin`（渲染窗口留在最大的显示器上）、`sleep`（休眠唤醒、渲染器挂死）、`switch`（原地换片）、`geom`（dock 尺寸的 strut 让渲染窗口在两个轴上都内缩）。`tools/regression.sh` 会把它们全跑一遍，每条不变式打印一行 PASS/FAIL。
+场景：`smoke`（播放、隐身、工作区、概览、填充模式、exit/start）、`soak`（持续播放）、`autopause`（窗口盖屏、全屏）、`pin`（渲染窗口留在工作区最大的显示器上）、`sleep`（休眠唤醒、渲染器挂死）、`switch`（原地换片）、`geom`（dock 尺寸的 strut 让渲染窗口在两个轴上都被裁）。`tools/regression.sh` 会把它们全跑一遍，每条不变式打印一行 PASS/FAIL。
 
 填充模式的几何计算另有一套不需要合成器的单元测试，覆盖虚拟显示器造不出来的输入——分数缩放，以及自绘阴影的客户端：
 

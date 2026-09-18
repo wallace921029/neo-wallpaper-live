@@ -24,7 +24,7 @@ neowallpaperlive exit                     # back to the static wallpaper
 | Same video on **all monitors**, frame-synced | one `mpv` process, one decode, N screens |
 | **Cover** fill on each monitor (default) | each screen gets its own centered crop; `contain` and `stretch` also available |
 | Mixed resolutions and **fractional scaling** | verified with two 4K panels at 150 % |
-| Sharpness is set by your **best** monitor | the compositor caps the renderer's surface at the size of the monitor it sits on, so it is pinned to the monitor with the most physical pixels — a 1080p laptop panel never limits an attached 4K screen |
+| Sharpness is set by your **best** monitor | the compositor caps the renderer's surface at the monitor's work area, so it is pinned to the display with the largest physical work area (preferring secondary displays on resolution ties to avoid topbar/dock insets) — a 1080p laptop panel or system docks never limit an attached 4K screen |
 | **Hot-plug** — dock / undock, 1 or 3 externals | playback never restarts; layers follow the monitors |
 | Lives in GNOME's **background layer** | unaffected by *show desktop*, workspace switches, Alt+Tab, the dock; the video also appears in the overview's workspace previews and workspace-switch animations |
 | Never steals input | right-click / drag-select on the desktop work normally |
@@ -142,6 +142,7 @@ Removes everything the installer put in place and resets the settings. Log out a
 | Green / garbled frames | Try `neowallpaperlive mpv-args --vo=gpu-next`, or `--hwdec=no` to rule out the decoder. |
 | `awake on` but the screen still blanks / the machine sleeps | `neowallpaperlive status` → `keepAwake.active` must be `true` while playing. If `error` is set, gnome-session is not running (non-GNOME session). Check other inhibitors with `gnome-session-inhibit --list`. |
 | Video missing on one monitor after plugging it in | `neowallpaperlive status` should list it under `monitors` with `layers` ≥ monitor count; if not, `neowallpaperlive exit && neowallpaperlive start`. |
+| Black or torn strips along the edge of a secondary monitor | Log out and back in after updating. GNOME Shell only loads new extension code on login; the work-area pinning fix requires a session reload to take effect. |
 
 Logs: `journalctl --user -f _COMM=gnome-shell | grep NeoWallpaperLive`.
 
@@ -157,7 +158,7 @@ mpv (hidden, minimized, hardware decoded, native video size)
        └─ Clutter.Clone → …
 ```
 
-The renderer window is kept on the monitor with the most physical pixels (`width x height x scale^2`), re-pinned whenever monitors change: a Wayland surface is capped at the size of the output it is on, so leaving it on a small screen would cap the resolution every other screen sees. `neowallpaperlive status` reports `rendererMonitor` and `rendererBuffer`.
+The renderer window is kept on the monitor with the largest physical work area (`workArea.width × workArea.height × scale²`), preferring a secondary display on resolution ties to avoid panel/dock insets, and re-pinned whenever monitors change: Mutter caps a Wayland surface at the work area of the output it sits on, so placing it on a smaller screen (or an inset primary display) would truncate or downscale what other monitors see. `neowallpaperlive status` reports `rendererMonitor` and `rendererBuffer`.
 
 The extension wraps `BackgroundManager._createBackgroundActor`, so every background actor GNOME creates — the main desktop layer, the sliding copies in workspace-switch animations, the scaled copies in the overview — receives a `Clutter.Clone` of the renderer's window actor. Clutter keeps an actor mapped while it has mapped clones, so Mutter keeps sending frame callbacks to the minimized mpv window and it keeps rendering. A few thin, reversible patches hide the renderer window from Alt+Tab, the overview, workspace thumbnails, the dock and window animations.
 
@@ -187,7 +188,7 @@ tools/regression.sh smoke sleep # just these two
 tools/headless-test.sh smoke    # a single scenario, prints the raw table
 ```
 
-Scenarios: `smoke` (playback, stealth, workspaces, overview, fill modes, exit/start), `soak` (continuous playback), `autopause` (windows covering monitors, fullscreen), `pin` (renderer stays on the largest monitor), `sleep` (suspend/resume, hung renderer), `switch` (changing the file in place), `geom` (a dock-sized strut insets the renderer on both axes). `tools/regression.sh` runs them all and prints one PASS/FAIL line per invariant.
+Scenarios: `smoke` (playback, stealth, workspaces, overview, fill modes, exit/start), `soak` (continuous playback), `autopause` (windows covering monitors, fullscreen), `pin` (renderer stays on the monitor with the largest work area), `sleep` (suspend/resume, hung renderer), `switch` (changing the file in place), `geom` (a dock-sized strut insets the renderer on both axes). `tools/regression.sh` runs them all and prints one PASS/FAIL line per invariant.
 
 The fill-mode geometry also has unit tests that need no compositor, for the inputs a virtual monitor cannot produce — fractional scaling, and a client drawing its own shadows:
 
