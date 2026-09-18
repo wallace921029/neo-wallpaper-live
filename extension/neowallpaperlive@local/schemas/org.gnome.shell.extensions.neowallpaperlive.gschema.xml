@@ -27,6 +27,21 @@
       <summary>Keep the computer awake while the wallpaper is playing</summary>
       <description>While a video is playing, inhibit automatic suspend and idle screen blanking/locking (gnome-session flags 4|8). Has no effect while the wallpaper is stopped. Set with: neowallpaperlive awake on|off</description>
     </key>
+    <key name="pause-when-covered" type="b">
+      <default>true</default>
+      <summary>Pause when every monitor is covered by windows</summary>
+      <description>Stop decoding while each monitor's work area is hidden behind a maximized, fullscreen or equally large window on the current workspace. Resumes as soon as any part of the wallpaper becomes visible.</description>
+    </key>
+    <key name="pause-on-fullscreen" type="b">
+      <default>true</default>
+      <summary>Pause while a fullscreen window is on top of any monitor</summary>
+      <description>Games and video players get the GPU to themselves, even if other monitors still show the wallpaper.</description>
+    </key>
+    <key name="pause-on-battery" type="b">
+      <default>false</default>
+      <summary>Pause while running on battery</summary>
+      <description>Uses UPower's OnBattery. The last frame stays on screen.</description>
+    </key>
     <key name="mpv-extra-args" type="as">
       <default>[]</default>
       <summary>Extra command-line arguments appended to the mpv renderer</summary>

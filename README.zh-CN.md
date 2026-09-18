@@ -24,14 +24,18 @@ neowallpaperlive exit                     # 恢复静态壁纸
 | 同一视频在**所有显示器**上播放，帧同步 | 一个 `mpv` 进程、一次解码、N 块屏 |
 | 每块屏 **cover** 填充（默认） | 各自居中裁切；也提供 `contain`、`stretch` |
 | 混合分辨率与**分数缩放** | 已在两块 150 % 缩放的 4K 屏上验证 |
+| 清晰度由**最好的那块屏**决定 | 合成器会把渲染窗口的 surface 限制在它所在显示器的大小，因此窗口被钉在物理像素最多的显示器上——1080p 的笔记本内屏不会拖累外接的 4K 屏 |
 | **热插拔**——插拔坞站、外接 1 块或 3 块 | 播放不会重启，图层自动跟随显示器 |
 | 位于 GNOME 的**背景层** | 不受"显示桌面"、切换工作区、Alt+Tab、Dock 影响；概览里的工作区预览和工作区切换动画中也有视频 |
 | 不抢输入 | 桌面右键、框选图标一切正常 |
 | **硬件解码** | VA-API（AMD / Intel）、NVDEC（NVIDIA）、Vulkan——`mpv --hwdec=auto-safe` 能找到什么就用什么。AMD 780M 上 4K60 H.264 约 5 % CPU |
 | 设置跨登录保留 | 登录后自动开始播放 |
+| **无缝切换** | `set` 直接在运行中的渲染器里换片，换壁纸不会闪一下静态背景 |
 | 锁屏时停止、解锁后恢复 | 省电；锁屏保持系统原有背景 |
+| **自动暂停** | 所有显示器都被窗口盖住、有全屏应用在最上层（游戏、视频）、或（可选开启）使用电池时停止解码，壁纸一露出立刻恢复。规则用 `autopause` 单独开关 |
 | **保持唤醒**开关（`awake on`） | 壁纸播放期间：不自动挂起、不自动息屏/锁屏。默认关闭；`exit`、锁屏、卸载时自动释放 |
 | 渲染进程崩溃自动恢复 | mpv 会自动重启（带退避） |
+| **能挺过休眠 / 唤醒** | 睡前暂停；唤醒后检查播放是否真的在推进，若 GPU 复位把渲染器冻住则自动重启 |
 | mpv/FFmpeg 能播的格式都行 | mp4、mkv、webm、mov、gif…… |
 | 永远不出声 | 壁纸设计上就是静音的 |
 
@@ -41,7 +45,6 @@ neowallpaperlive exit                     # 恢复静态壁纸
 - **GNOME 50 以外的版本**——依赖 Shell 内部实现，版本间会变（`install.sh` 会检查并拒绝；`--force` 可强行尝试）。
 - **每块屏放不同视频**——设计目标就是一个视频到处播。
 - **锁屏 / 登录界面**壁纸。
-- 全屏应用或游戏运行时、使用电池时的**自动暂停**（计划中）。
 - **播放列表、定时、网络源**（YouTube 等）——只播放单个本地文件。
 - **图形界面 / 设置面板**——只有命令行。
 - 概览中工作区预览的圆角不会作用到视频上（视频是直角，下面的静态壁纸是圆角）。
@@ -107,6 +110,8 @@ neowallpaperlive start             继续播放上次的文件
 neowallpaperlive status            设置 + 运行状态（显示器、渲染进程 pid……）
 neowallpaperlive fill MODE         cover（默认）| contain | stretch
 neowallpaperlive awake on|off      壁纸播放期间保持电脑唤醒（默认 off）
+neowallpaperlive autopause         查看自动暂停规则以及当前是否已暂停
+neowallpaperlive autopause 规则 on|off   规则 = covered（默认开）| fullscreen（默认开）| battery（默认关）
 neowallpaperlive mpv-args [ARG…]   排障用的额外 mpv 参数；不带参数则清空
 neowallpaperlive log               实时查看扩展日志
 neowallpaperlive uninstall         删除扩展、CLI、desktop 条目和全部设置
@@ -116,6 +121,7 @@ neowallpaperlive uninstall         删除扩展、CLI、desktop 条目和全部�
 - 选一个分辨率不低于最大显示器的视频：4K 源在 4K 屏上是清晰的，1080p 会被放大。
 - 10–60 秒、首尾无缝衔接的短片效果最好。
 - 宁要黑边不要裁切的话：`neowallpaperlive fill contain`。
+- 自动暂停只停解码、画面停在最后一帧，除了 CPU/GPU 占用下降什么都感觉不到。笔记本建议开 `neowallpaperlive autopause battery on`。
 - 想让屏幕像演示模式一样常亮：`neowallpaperlive awake on`。它只在视频真正播放时才生效（`exit` 后立即释放），用的是 gnome-session 的标准 inhibitor（和视频播放器同一套），设置跨登录保留；`status` 可以看到当前是否已生效。
 
 ## 卸载
@@ -132,7 +138,7 @@ neowallpaperlive uninstall
 |---|---|
 | `neowallpaperlive set` 提示要注销重登 | 安装/更新后的正常现象——Wayland 无法热加载扩展代码。 |
 | 显示的是静态壁纸，`status` 里 `playing: false` | `neowallpaperlive log` 里有 mpv 转发的报错。直接测试文件：`mpv 文件`。 |
-| CPU 占用高 | 硬解没生效。用 `mpv --hwdec=auto-safe --msg-level=vd=v 文件` 检查；按上表装 VA-API / NVIDIA 相关包。 |
+| CPU 占用高 | 硬解没生效：`neowallpaperlive status` 里 `mpv.hwdec-current` 显示实际使用的解码器（`vaapi`、`nvdec`、`vulkan`……），`no` 表示软解。按上表装 VA-API / NVIDIA 相关包。 |
 | 绿屏 / 花屏 | 试 `neowallpaperlive mpv-args --vo=gpu-next`，或用 `--hwdec=no` 排除解码器问题。 |
 | `awake on` 了但屏幕还是会黑 / 电脑还是会睡 | `neowallpaperlive status` 里播放期间 `keepAwake.active` 必须是 `true`。若 `error` 有值，说明 gnome-session 没在运行（非 GNOME 会话）。用 `gnome-session-inhibit --list` 看其他 inhibitor。 |
 | 新插的显示器上没有视频 | `neowallpaperlive status` 的 `monitors` 应列出它且 `layers` ≥ 显示器数；否则 `neowallpaperlive exit && neowallpaperlive start`。 |
@@ -150,6 +156,8 @@ mpv（隐藏、已最小化、硬件解码、按视频原始尺寸渲染）
        ├─ Clutter.Clone → 显示器 1 的 Meta.BackgroundActor
        └─ Clutter.Clone → ……
 ```
+
+渲染窗口始终被钉在物理像素最多的显示器上（`宽 × 高 × 缩放²`），显示器变化时重新钉：Wayland surface 的尺寸受所在输出限制，窗口留在小屏上会把所有其它屏的分辨率一起拉低。`neowallpaperlive status` 里的 `rendererMonitor` 和 `rendererBuffer` 可以看到当前情况。
 
 扩展包裹了 `BackgroundManager._createBackgroundActor`，于是 GNOME 创建的每一个背景 actor——桌面主图层、工作区切换动画里的滑动副本、概览里的缩放副本——都会得到一个渲染窗口的 `Clutter.Clone`。Clutter 会让拥有已映射 clone 的 actor 保持映射状态，所以 Mutter 持续给已最小化的 mpv 窗口发 frame callback，mpv 也就持续出帧。再加几个薄薄的、可撤销的补丁，把渲染窗口从 Alt+Tab、概览、工作区缩略图、Dock 和窗口动画中隐藏掉。
 
@@ -172,12 +180,15 @@ tools/                  headless 测试工具
 `tools/headless-test.sh` 会启动一个**独立的 headless GNOME Shell**，带两块虚拟显示器（1920×1080 和 1280×1024），把扩展装进隔离的 XDG 目录，通过真实的 CLI 配置，然后驱动它（切工作区、重建背景层、开关概览、`fill`、`exit`/`start`），同时采样 mpv 播放位置、扩展的 D-Bus 状态和舞台截图。你的真实会话完全不受影响。
 
 ```bash
-tools/headless-test.sh smoke    # 约 1.5 分钟
-tools/headless-test.sh soak     # 约 1.5 分钟持续播放
-tools/headless-test.sh all
+tools/regression.sh             # 跑全部场景并校验断言，约 10 分钟
+tools/regression.sh smoke sleep # 只跑这两个
+
+tools/headless-test.sh smoke    # 单个场景，输出原始表格
 ```
 
-预期：`mpv-pos` 持续增长、`drop` 保持 0、`playing=True layers=2 minim=True`、截图差异非零、`stealth` 步骤输出 `actors: 0, tab: 0, running: []`，且无 JS 错误。
+场景：`smoke`（播放、隐身、工作区、概览、填充模式、exit/start）、`soak`（持续播放）、`autopause`（窗口盖屏、全屏）、`pin`（渲染窗口留在最大的显示器上）、`sleep`（休眠唤醒、渲染器挂死）、`switch`（原地换片）。`tools/regression.sh` 会把它们全跑一遍，每条不变式打印一行 PASS/FAIL。
+
+读原始表格：`mpv-pos` 和 `drop` 来自对 mpv IPC socket 的直接查询；`pid`/`win`（显示器 + 缓冲尺寸）和 `ipc` 列来自扩展自己的 D-Bus 状态。`ipc` 列的格式是 `<硬解>/<扩展报告的暂停>/<mpv 实际的暂停>`，后两者必须永远一致。
 
 ## 致谢
 

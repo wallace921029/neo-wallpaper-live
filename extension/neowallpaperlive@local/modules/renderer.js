@@ -10,7 +10,14 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+
 import {APP_ID, TITLE_PREFIX, isRendererWindow, log, logWarn} from './constants.js';
+import {MpvIpc, sleep, withTimeout} from './mpvipc.js';
+
+const SWITCH_TIMEOUT_MS = 1000;
+const SWITCH_CONFIRM_TRIES = 20;   // x SWITCH_CONFIRM_INTERVAL_MS
+const SWITCH_CONFIRM_INTERVAL_MS = 100;
 
 const RESPAWN_DELAY_MS = 2000;
 const RESPAWN_MAX = 5;          // within RESPAWN_WINDOW_MS
@@ -21,15 +28,18 @@ export class Renderer {
      * @param {object} callbacks
      * @param {(actor: Meta.WindowActor, win: Meta.Window) => void} callbacks.onReady
      * @param {() => void} callbacks.onLost
+     * @param {(ipc: MpvIpc | null) => void} callbacks.onIpc
      * @param {() => string[]} callbacks.getExtraArgs
      */
-    constructor({onReady, onLost, getExtraArgs}) {
+    constructor({onReady, onLost, onIpc, getExtraArgs}) {
         this._onReady = onReady;
         this._onLost = onLost;
+        this._onIpc = onIpc;
         this._getExtraArgs = getExtraArgs;
 
         this._videoPath = null;
         this._proc = null;
+        this._ipc = null;
         this._title = null;
         this._win = null;
         this._actor = null;
@@ -37,6 +47,7 @@ export class Renderer {
         this._actorSignals = [];
         this._pendingWindows = new Map(); // Meta.Window -> signal ids
         this._windowCreatedId = 0;
+        this._monitorsChangedId = 0;
         this._respawnSource = 0;
         this._respawnTimes = [];
         this._stopping = false;
@@ -58,6 +69,35 @@ export class Renderer {
         return this._win;
     }
 
+    /** Monitor the renderer window currently sits on, or null. */
+    get monitor() {
+        return this._win?.get_monitor() ?? null;
+    }
+
+    /**
+     * Size of the buffer mpv is actually rendering into. The compositor caps a
+     * window at the size of its monitor, so this is what limits sharpness on
+     * every other monitor.
+     */
+    get bufferSize() {
+        if (!this._win)
+            return null;
+        const {width, height} = this._win.get_buffer_rect();
+        return {width, height};
+    }
+
+    /** Connected MpvIpc for the running renderer, or null. */
+    get ipc() {
+        return this._ipc?.connected ? this._ipc : null;
+    }
+
+    // One socket per Wayland display so a headless test shell never talks
+    // to the real session's renderer (or vice versa).
+    _ipcPath() {
+        const display = GLib.path_get_basename(GLib.getenv('WAYLAND_DISPLAY') ?? 'default');
+        return GLib.build_filenamev([GLib.get_user_runtime_dir(), `neowallpaperlive-${display}.sock`]);
+    }
+
     start(videoPath) {
         if (this._proc && this._videoPath === videoPath)
             return;
@@ -70,7 +110,48 @@ export class Renderer {
             this._windowCreatedId = global.display.connect('window-created',
                 (_display, win) => this._onWindowCreated(win));
         }
+        if (!this._monitorsChangedId) {
+            this._monitorsChangedId = Main.layoutManager.connect('monitors-changed',
+                () => this._pinToBestMonitor());
+        }
         this._spawn();
+    }
+
+    /**
+     * Point the running mpv at another file instead of restarting it, so the
+     * video on screen is never replaced by the static wallpaper. Resolves
+     * false when that is not possible and the caller should restart instead.
+     */
+    async switchTo(videoPath) {
+        const ipc = this.ipc;
+        if (!ipc || !this._win)
+            return false;
+        try {
+            await withTimeout(ipc.command('loadfile', videoPath, 'replace'), SWITCH_TIMEOUT_MS);
+        } catch (e) {
+            logWarn(`in-place switch rejected by mpv: ${e.message}`);
+            return false;
+        }
+        // loadfile only queues the request; make sure mpv really took the file
+        // before reporting success, otherwise the caller must fall back.
+        for (let i = 0; i < SWITCH_CONFIRM_TRIES; i++) {
+            await sleep(SWITCH_CONFIRM_INTERVAL_MS);
+            if (this._ipc !== ipc || !this._win)
+                return false;
+            let current;
+            try {
+                current = await withTimeout(ipc.getProperty('path'), SWITCH_TIMEOUT_MS);
+            } catch {
+                return false;
+            }
+            if (current === videoPath) {
+                this._videoPath = videoPath;
+                log(`switched to ${videoPath} in place`);
+                return true;
+            }
+        }
+        logWarn('mpv did not pick up the new file in time');
+        return false;
     }
 
     stop() {
@@ -83,11 +164,16 @@ export class Renderer {
             global.display.disconnect(this._windowCreatedId);
             this._windowCreatedId = 0;
         }
+        if (this._monitorsChangedId) {
+            Main.layoutManager.disconnect(this._monitorsChangedId);
+            this._monitorsChangedId = 0;
+        }
         for (const [win, ids] of this._pendingWindows)
             ids.forEach(id => win.disconnect(id));
         this._pendingWindows.clear();
 
         this._releaseWindow();
+        this._dropIpc();
 
         if (this._proc) {
             const proc = this._proc;
@@ -123,9 +209,7 @@ export class Renderer {
             `--wayland-app-id=${APP_ID}`,
             `--title=${this._title}`,
         ];
-        const ipc = GLib.getenv('NWL_IPC'); // test harness only
-        if (ipc)
-            argv.push(`--input-ipc-server=${ipc}`);
+        argv.push(`--input-ipc-server=${this._ipcPath()}`);
         argv.push(...this._getExtraArgs());
         argv.push('--', this._videoPath);
         return argv;
@@ -133,6 +217,7 @@ export class Renderer {
 
     _spawn() {
         const argv = this._buildArgv();
+        GLib.unlink(this._ipcPath()); // a crashed mpv can leave a stale socket
         try {
             const launcher = new Gio.SubprocessLauncher({
                 flags: Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_MERGE,
@@ -144,6 +229,14 @@ export class Renderer {
             return;
         }
         log(`mpv started, pid ${this._proc.get_identifier()}`);
+
+        this._dropIpc();
+        const ipc = new MpvIpc(this._ipcPath());
+        this._ipc = ipc;
+        ipc.connect().then(ok => {
+            if (ok && this._ipc === ipc)
+                this._onIpc(ipc);
+        }).catch(e => logWarn(`mpv ipc: ${e.message}`));
 
         const proc = this._proc;
         const stream = new Gio.DataInputStream({base_stream: proc.get_stdout_pipe()});
@@ -172,6 +265,7 @@ export class Renderer {
             if (this._proc !== p)
                 return; // superseded or stopped on purpose
             this._proc = null;
+            this._dropIpc();
             this._releaseWindow();
             if (this._stopping)
                 return;
@@ -194,6 +288,44 @@ export class Renderer {
                 this._spawn();
             return GLib.SOURCE_REMOVE;
         });
+    }
+
+    // mpv's surface is capped at the size of the monitor it sits on, so the
+    // monitor with the most physical pixels decides how sharp the video can be
+    // on every monitor. Keep the window there.
+    _bestMonitorIndex() {
+        let best = null;
+        let bestPixels = -1;
+        for (const m of Main.layoutManager.monitors) {
+            const scale = m.geometry_scale || 1;
+            const pixels = m.width * scale * m.height * scale;
+            if (pixels > bestPixels) {
+                bestPixels = pixels;
+                best = m.index;
+            }
+        }
+        return best;
+    }
+
+    _pinToBestMonitor() {
+        const win = this._win;
+        if (!win)
+            return;
+        const target = this._bestMonitorIndex();
+        if (target === null || win.get_monitor() === target)
+            return;
+        log(`pinning renderer to monitor ${target} (most pixels)`);
+        win.move_to_monitor(target);
+    }
+
+    _dropIpc() {
+        if (!this._ipc)
+            return;
+        const wasConnected = this._ipc.connected;
+        this._ipc.close();
+        this._ipc = null;
+        if (wasConnected)
+            this._onIpc(null);
     }
 
     // ---- window adoption --------------------------------------------------
@@ -271,6 +403,8 @@ export class Renderer {
             if (!win.minimized)
                 win.minimize();
         }));
+
+        this._pinToBestMonitor();
 
         log('renderer window adopted');
         this._onReady(actor, win);

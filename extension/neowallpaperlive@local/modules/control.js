@@ -38,7 +38,7 @@ const TEST_IFACE = `
 </node>`;
 
 export class Control {
-    /** @param {() => object} getStatus */
+    /** @param {() => (object | Promise<object>)} getStatus */
     constructor(getStatus) {
         this._getStatus = getStatus;
         this._test = GLib.getenv('NWL_TEST') === '1';
@@ -64,8 +64,14 @@ export class Control {
         this._dbus = null;
     }
 
-    Status() {
-        return JSON.stringify(this._getStatus());
+    async StatusAsync(_params, invocation) {
+        let status;
+        try {
+            status = await this._getStatus();
+        } catch (e) {
+            status = {error: e.message};
+        }
+        invocation.return_value(new GLib.Variant('(s)', [JSON.stringify(status)]));
     }
 
     Eval(code) {

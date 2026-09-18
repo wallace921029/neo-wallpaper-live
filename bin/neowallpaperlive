@@ -23,6 +23,10 @@ Usage: neowallpaperlive <command> [args]
   fill MODE           cover (default) | contain | stretch
   awake on|off        keep the computer awake (no suspend, no screen blanking / lock)
                       while the wallpaper is playing; default off
+  autopause [RULE on|off]
+                      show or set auto-pause rules. RULE = covered (default on:
+                      every monitor hidden behind windows) | fullscreen (default on:
+                      a fullscreen app is on top) | battery (default off)
   mpv-args [ARG...]   extra mpv arguments for troubleshooting; no ARG clears them
   log                 follow the extension's log (Ctrl-C to stop)
   uninstall [-y]      remove the extension, the CLI and all settings
@@ -128,6 +132,37 @@ cmd_awake() {
     esac
 }
 
+cmd_autopause() {
+    check_installed
+    if [[ $# -eq 0 ]]; then
+        echo "covered:    $(gs get "$SCHEMA" pause-when-covered)   (pause when every monitor is hidden behind windows)"
+        echo "fullscreen: $(gs get "$SCHEMA" pause-on-fullscreen)   (pause while a fullscreen app is on top of any monitor)"
+        echo "battery:    $(gs get "$SCHEMA" pause-on-battery)   (pause while on battery)"
+        local paused
+        paused=$(runtime_field autoPause.paused)
+        if [[ "$paused" == "true" ]]; then
+            echo "now:        paused ($(runtime_field autoPause.reasons))"
+        elif [[ "$paused" == "false" ]]; then
+            echo "now:        playing"
+        fi
+        return
+    fi
+    [[ $# -eq 2 ]] || die "usage: neowallpaperlive autopause [covered|fullscreen|battery on|off]"
+    local key
+    case "$1" in
+        covered)    key=pause-when-covered ;;
+        fullscreen) key=pause-on-fullscreen ;;
+        battery)    key=pause-on-battery ;;
+        *) die "unknown rule: $1 (covered | fullscreen | battery)" ;;
+    esac
+    case "$2" in
+        on)  gs set "$SCHEMA" "$key" true ;;
+        off) gs set "$SCHEMA" "$key" false ;;
+        *) die "expected on|off, got: $2" ;;
+    esac
+    echo "auto-pause $1: $2"
+}
+
 cmd_set() {
     [[ $# -eq 1 ]] || die "usage: neowallpaperlive set FILE"
     local file=$1 path
@@ -187,6 +222,7 @@ cmd_status() {
     echo "enabled:    $(gs get "$SCHEMA" enabled)"
     echo "fill-mode:  $(gs get "$SCHEMA" fill-mode)"
     echo "keep-awake: $(gs get "$SCHEMA" keep-awake)"
+    echo "autopause:  covered=$(gs get "$SCHEMA" pause-when-covered) fullscreen=$(gs get "$SCHEMA" pause-on-fullscreen) battery=$(gs get "$SCHEMA" pause-on-battery)"
     echo "mpv-args:   $(gs get "$SCHEMA" mpv-extra-args)"
     echo "runtime:"
     if ! dbus_status | sed 's/^/  /'; then
@@ -242,6 +278,7 @@ main() {
         status)         cmd_status ;;
         fill)           cmd_fill "$@" ;;
         awake)          cmd_awake "$@" ;;
+        autopause)      cmd_autopause "$@" ;;
         mpv-args)       cmd_mpv_args "$@" ;;
         log)            cmd_log ;;
         uninstall)      cmd_uninstall "$@" ;;
