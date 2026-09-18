@@ -102,6 +102,21 @@ export class Renderer {
         return {width, height};
     }
 
+    /**
+     * Frame and buffer rectangles of the renderer window, in stage
+     * coordinates. They differ when the client draws its own shadows, and the
+     * fill maths uses that difference, so `status` reports both.
+     */
+    get rects() {
+        if (!this._win)
+            return null;
+        const f = this._win.get_frame_rect(), b = this._win.get_buffer_rect();
+        return {
+            frame: [f.x, f.y, f.width, f.height],
+            buffer: [b.x, b.y, b.width, b.height],
+        };
+    }
+
     /** Connected MpvIpc for the running renderer, or null. */
     get ipc() {
         return this._ipc?.connected ? this._ipc : null;

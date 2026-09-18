@@ -166,6 +166,7 @@ extension/neowallpaperlive@local/
   extension.js          lifecycle + GSettings → renderer/layer sync
   modules/renderer.js   mpv process, window adoption, hiding, crash respawn
   modules/wallpaper.js  clones into background actors, fill-mode layout
+  modules/fit.js        fill-mode geometry, pure and unit-tested
   modules/stealth.js    hide the renderer from window lists / dock / animations
   modules/control.js    D-Bus status (+ test hooks when NWL_TEST=1)
   schemas/              GSettings schema
@@ -186,7 +187,13 @@ tools/regression.sh smoke sleep # just these two
 tools/headless-test.sh smoke    # a single scenario, prints the raw table
 ```
 
-Scenarios: `smoke` (playback, stealth, workspaces, overview, fill modes, exit/start), `soak` (continuous playback), `autopause` (windows covering monitors, fullscreen), `pin` (renderer stays on the largest monitor), `sleep` (suspend/resume, hung renderer), `switch` (changing the file in place). `tools/regression.sh` runs them all and prints one PASS/FAIL line per invariant.
+Scenarios: `smoke` (playback, stealth, workspaces, overview, fill modes, exit/start), `soak` (continuous playback), `autopause` (windows covering monitors, fullscreen), `pin` (renderer stays on the largest monitor), `sleep` (suspend/resume, hung renderer), `switch` (changing the file in place), `geom` (a dock-sized strut insets the renderer on both axes). `tools/regression.sh` runs them all and prints one PASS/FAIL line per invariant.
+
+The fill-mode geometry also has unit tests that need no compositor, for the inputs a virtual monitor cannot produce — fractional scaling, and a client drawing its own shadows:
+
+```bash
+gjs -m tools/fit-test.js
+```
 
 Reading the raw table: `mpv-pos` keeps advancing, `drop` stays 0, `playing=True layers=2 minim=True`, screenshot diffs stay non-zero, the `stealth` step reports `actors: 0, tab: 0, running: []`, and no JS errors.
 

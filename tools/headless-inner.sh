@@ -9,7 +9,7 @@ ev() { gdbus call $D --method "$BUS.Eval" "$1" 2>&1 | sed "s/^('//; s/',)\$//" |
 mapfile -t STEPS < "$T/steps.txt"
 
 gnome-shell --headless --wayland --no-x11 --wayland-display nwl-test \
-    --virtual-monitor 1920x1080 --virtual-monitor 1280x1024 \
+    ${NWL_MONITORS:---virtual-monitor 1920x1080 --virtual-monitor 1280x1024} \
     > "$OUT/shell.log" 2>&1 &
 SHELL_PID=$!
 
@@ -32,6 +32,9 @@ for step in "${STEPS[@]}"; do
     n=$((n+1)); tag=$(printf "%02d-%s" $n "$label")
     gdbus call $D --method "$BUS.Screenshot" "$OUT/$tag.png" >/dev/null 2>&1
     st=$(gdbus call $D --method "$BUS.Status" 2>/dev/null | sed "s/^('//; s/',)\$//" | sed 's/\\"/"/g')
+    # Kept per sample so regression.sh can check invariants the table has no
+    # column for, such as every clone still covering its background layer.
+    printf '%s' "$st" > "$OUT/$tag.json"
     # "ipc" = hwdec-current as reported by the extension over its own mpv IPC link,
     # plus "+P(reasons)" while auto-pause holds the renderer paused.
     read -r playing layers pid win ipc <<<"$(python3 -c 'import json,sys; s=json.loads(sys.argv[1]); m=s.get("mpv") or {}; ap=s.get("autoPause") or {}

@@ -11,20 +11,29 @@ set -uo pipefail
 T="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTDIR="$T/out/regression"
 SCENARIOS=("$@")
-[[ ${#SCENARIOS[@]} -eq 0 ]] && SCENARIOS=(smoke soak autopause pin sleep switch)
+[[ ${#SCENARIOS[@]} -eq 0 ]] && SCENARIOS=(smoke soak autopause pin sleep switch geom)
 
 rm -rf "$OUTDIR"; mkdir -p "$OUTDIR"
+
+# The fill maths first, on its own: the harness cannot produce a fractional
+# monitor scale or a client that draws its own shadows, so those inputs are
+# only ever exercised here.
+printf '\033[1;34m==>\033[0m fill maths\n'
+gjs -m "$T/fit-test.js" || FIT_FAILED=1
+
 for sc in "${SCENARIOS[@]}"; do
     printf '\033[1;34m==>\033[0m running %s\n' "$sc"
     bash "$T/headless-test.sh" "$sc" > "$OUTDIR/$sc.txt" 2>&1
     # Keep the shell log next to the table for the checks below.
     run_out=$(grep -o 'out=[^ ]*' "$OUTDIR/$sc.txt" | head -1 | cut -d= -f2)
     [[ -n "$run_out" && -f "$run_out/shell.log" ]] && cp "$run_out/shell.log" "$OUTDIR/$sc.log"
+    # Per-sample status, for the invariants the table has no column for.
+    if [[ -n "$run_out" ]]; then mkdir -p "$OUTDIR/$sc"; cp "$run_out"/*.json "$OUTDIR/$sc/" 2>/dev/null; fi
 done
 
 echo
 python3 - "$OUTDIR" "${SCENARIOS[@]}" <<'PY'
-import os, re, sys
+import glob, json, os, re, sys
 
 outdir, scenarios = sys.argv[1], sys.argv[2:]
 COLS = "t step pos drop playing layers pid win ipc d0 d1".split()
@@ -51,6 +60,39 @@ def rows(scenario):
         row["note"] = parts[11].strip() if len(parts) > 11 else ""
         out.append(row)
     return out
+
+def statuses(scenario):
+    """Every per-sample status the run left behind, oldest first."""
+    out = []
+    for path in sorted(glob.glob(os.path.join(outdir, scenario, "*.json"))):
+        try:
+            out.append((os.path.basename(path)[:-5], json.load(open(path))))
+        except (ValueError, OSError):
+            pass
+    return out
+
+def uncovered(status):
+    """Layers the video does not fill, as 'sample:monitor(edges)'.
+
+    In cover and stretch the clone must reach every edge of its layer; a gap
+    means the fill maths mislaid the video (this is what a mistaken shadow
+    inset did: it shifted the video up and left by the window's position on
+    screen, baring the right-hand and bottom edges).
+    """
+    if status.get("fillMode") == "contain" or not status.get("playing"):
+        return []
+    bad = []
+    for entry in status.get("layerBoxes") or []:
+        lx, ly, lw, lh = entry["layer"]
+        if not entry["clone"]:
+            continue
+        cx, cy, cw, ch = entry["clone"]
+        edges = "".join(name for name, slack in
+                        (("L", -cx), ("T", -cy), ("R", cx + cw - lw), ("B", cy + ch - lh))
+                        if slack < -1)
+        if edges:
+            bad.append(f'{entry["monitor"]}({edges})')
+    return bad
 
 def pause_flags(row):
     """ipc column is '<hwdec>/<extension-reported>/<directly-queried>'."""
@@ -85,6 +127,9 @@ for sc in scenarios:
     disagree = [x["step"] for x in r
                 if pause_flags(x)[1] is not None and pause_flags(x)[1] != pause_flags(x)[2]]
     check(sc, "status pause matches mpv's real state (T1 ipc)", not disagree, ",".join(disagree))
+
+    gaps = [f"{tag}:{b}" for tag, st in statuses(sc) for b in uncovered(st)]
+    check(sc, "video fills every layer edge to edge", not gaps, ",".join(gaps[:3]))
 
     by_step = {x["step"]: x for x in r}
 
@@ -133,6 +178,14 @@ for sc in scenarios:
               pids.get("h1") not in (None, "-") and pids.get("h1") != pids.get("s1"),
               f'{pids.get("s1")} -> {pids.get("h1")}')
 
+    if sc == "geom":
+        # The point of the scenario: the renderer really is inset from its
+        # monitor on both axes, or the check above proves nothing.
+        rects = [st["rendererRects"] for _, st in statuses(sc) if st.get("rendererRects")]
+        docked = [f for f in (r["frame"] for r in rects) if f[0] > 0 and f[1] > 0]
+        check(sc, "the dock strut really insets the renderer (geom)", docked,
+              str(docked[0]) if docked else "never inset")
+
     if sc == "switch":
         pids = {x["pid"] for x in r}
         check(sc, "changing the video keeps the same process (T5)", len(pids) == 1, ",".join(sorted(pids)))
@@ -155,3 +208,5 @@ for sc, name, ok, detail in results:
 print(f"\n{len(results) - failed}/{len(results)} checks passed")
 sys.exit(1 if failed else 0)
 PY
+scenarios_ok=$?
+exit $(( scenarios_ok || ${FIT_FAILED:-0} ))

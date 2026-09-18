@@ -33,9 +33,9 @@ mkdir -p "$OUT" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
 # The pin scenario needs a clip LARGER than every virtual monitor, so that the
 # compositor's per-monitor size cap on mpv's surface is actually observable.
 VIDEO="$T/test.mp4"
-if [[ "$SCENARIO" == "pin" || "$SCENARIO" == "switch" ]]; then
+if [[ "$SCENARIO" == "pin" || "$SCENARIO" == "switch" || "$SCENARIO" == "geom" ]]; then
     [[ -f "$T/test-big.mp4" ]] || bash "$T/gen-test-video.sh" 2560x1440 "$T/test-big.mp4" >/dev/null
-    [[ "$SCENARIO" == "pin" ]] && VIDEO="$T/test-big.mp4"
+    [[ "$SCENARIO" == "pin" || "$SCENARIO" == "geom" ]] && VIDEO="$T/test-big.mp4"
 fi
 
 EXT_DIR="$XDG_DATA_HOME/gnome-shell/extensions/$UUID"
@@ -86,6 +86,24 @@ case "$SCENARIO" in
     switch) STEPS=(s1 "to-big!neowallpaperlive set $T/test-big.mp4" b1
                    "to-small!neowallpaperlive set $T/test.mp4" s2
                    "to-big2!neowallpaperlive set $T/test-big.mp4" b2) ;;
+    # Dumps the real allocation of every video layer, its clone and the clone's
+    # source, next to the renderer window's frame/buffer rects and the monitor
+    # geometry, so fill-mode maths can be checked against what Clutter did.
+    # Work-area clamp on both axes: the renderer's monitor carries the top bar
+    # and, from the "dock" step on, a dock-sized strut down its left edge, so
+    # the renderer window is inset from the monitor horizontally and vertically
+    # — the shape that made the fill maths shift the video off the screen edge.
+    # Work-area clamp on both axes: the renderer's monitor carries the top bar
+    # and, from the "dock" step on, a dock-sized strut down its left edge, so
+    # the renderer window ends up inset from the monitor horizontally as well as
+    # vertically -- the shape that made the fill maths shift the video off the
+    # right-hand and bottom edges. The clone-covers-layer check in
+    # regression.sh reads the per-sample status this leaves behind.
+    geom) DOCK="const St = Main.layoutManager.uiGroup.constructor; const d = new St({x: 0, y: 0, width: 51, height: 2160}); Main.layoutManager.addChrome(d, {affectsStruts: true, trackFullscreen: false}); 'dock ' + d.width"
+         STEPS=(s1 "dock:$DOCK" d1 "rebuild:Main.layoutManager._monitorsChanged(); 'ok'" d2
+                "fill-contain!neowallpaperlive fill contain" c1
+                "fill-stretch!neowallpaperlive fill stretch" c2
+                "fill-cover!neowallpaperlive fill cover" d3) ;;
     *) echo "unknown scenario: $SCENARIO"; exit 2 ;;
 esac
 printf '%s\n' "${STEPS[@]}" > "$T/steps.txt"

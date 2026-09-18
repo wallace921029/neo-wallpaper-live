@@ -166,6 +166,7 @@ extension/neowallpaperlive@local/
   extension.js          生命周期 + GSettings → 渲染/图层同步
   modules/renderer.js   mpv 进程、窗口认领、隐藏、崩溃重启
   modules/wallpaper.js  clone 进背景 actor、填充模式布局
+  modules/fit.js        填充模式几何计算，纯函数，有单元测试
   modules/stealth.js    从窗口列表 / Dock / 动画中隐藏渲染窗口
   modules/control.js    D-Bus 状态（NWL_TEST=1 时附带测试钩子）
   schemas/              GSettings schema
@@ -186,7 +187,13 @@ tools/regression.sh smoke sleep # 只跑这两个
 tools/headless-test.sh smoke    # 单个场景，输出原始表格
 ```
 
-场景：`smoke`（播放、隐身、工作区、概览、填充模式、exit/start）、`soak`（持续播放）、`autopause`（窗口盖屏、全屏）、`pin`（渲染窗口留在最大的显示器上）、`sleep`（休眠唤醒、渲染器挂死）、`switch`（原地换片）。`tools/regression.sh` 会把它们全跑一遍，每条不变式打印一行 PASS/FAIL。
+场景：`smoke`（播放、隐身、工作区、概览、填充模式、exit/start）、`soak`（持续播放）、`autopause`（窗口盖屏、全屏）、`pin`（渲染窗口留在最大的显示器上）、`sleep`（休眠唤醒、渲染器挂死）、`switch`（原地换片）、`geom`（dock 尺寸的 strut 让渲染窗口在两个轴上都内缩）。`tools/regression.sh` 会把它们全跑一遍，每条不变式打印一行 PASS/FAIL。
+
+填充模式的几何计算另有一套不需要合成器的单元测试，覆盖虚拟显示器造不出来的输入——分数缩放，以及自绘阴影的客户端：
+
+```bash
+gjs -m tools/fit-test.js
+```
 
 读原始表格：`mpv-pos` 和 `drop` 来自对 mpv IPC socket 的直接查询；`pid`/`win`（显示器 + 缓冲尺寸）和 `ipc` 列来自扩展自己的 D-Bus 状态。`ipc` 列的格式是 `<硬解>/<扩展报告的暂停>/<mpv 实际的暂停>`，后两者必须永远一致。
 

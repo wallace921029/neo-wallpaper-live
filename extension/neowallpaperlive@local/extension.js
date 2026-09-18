@@ -236,7 +236,9 @@ export default class NeoWallpaperLiveExtension extends Extension {
             rendererMinimized: this._renderer.window?.minimized ?? null,
             rendererMonitor: this._renderer.monitor,
             rendererBuffer: this._renderer.bufferSize,
+            rendererRects: this._renderer.rects,
             layers: this._layer.layerCount,
+            layerBoxes: this._layer.describe(),
             keepAwake: {
                 requested: this._settings.get_boolean('keep-awake'),
                 active: this._keepAwake.active,
@@ -253,7 +255,13 @@ export default class NeoWallpaperLiveExtension extends Extension {
                 },
             },
             monitors: Main.layoutManager.monitors.map(m => ({
-                index: m.index, width: m.width, height: m.height, scale: m.geometry_scale,
+                index: m.index, x: m.x, y: m.y,
+                width: m.width, height: m.height, scale: m.geometry_scale,
+                workArea: (() => {
+                    const a = global.workspace_manager.get_active_workspace()
+                        .get_work_area_for_monitor(m.index);
+                    return [a.x, a.y, a.width, a.height];
+                })(),
             })),
             mpv: await this._mpvInfo(),
         };

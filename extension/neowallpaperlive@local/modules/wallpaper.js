@@ -12,6 +12,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as Background from 'resource:///org/gnome/shell/ui/background.js';
 
 import {BACKGROUND_SCHEMA, log} from './constants.js';
+import {fitClone} from './fit.js';
 
 /**
  * Container that follows its parent's size and lays out the clone with the
@@ -46,29 +47,14 @@ class NeoWallpaperLayer extends Clutter.Actor {
             return;
         }
 
-        // The buffer can be larger than the visible frame (client-side shadows);
-        // fit the frame, not the buffer.
-        const frame = source.win.get_frame_rect();
-        const buf = source.win.get_buffer_rect();
-        const fw = frame.width > 0 ? frame.width : natW;
-        const fh = frame.height > 0 ? frame.height : natH;
-        const offX = frame.x - buf.x, offY = frame.y - buf.y;
-
-        let sx, sy;
-        switch (this._getFillMode()) {
-        case 'stretch':
-            sx = w / fw;
-            sy = h / fh;
-            break;
-        case 'contain':
-            sx = sy = Math.min(w / fw, h / fh);
-            break;
-        default: // cover
-            sx = sy = Math.max(w / fw, h / fh);
-        }
-        const x = (w - fw * sx) / 2 - offX * sx;
-        const y = (h - fh * sy) / 2 - offY * sy;
-        clone.allocate(new Clutter.ActorBox({x1: x, y1: y, x2: x + natW * sx, y2: y + natH * sy}));
+        const fit = fitClone({width: w, height: h}, {
+            width: natW, height: natH,
+            frame: source.win.get_frame_rect(),
+            buffer: source.win.get_buffer_rect(),
+        }, this._getFillMode());
+        clone.allocate(new Clutter.ActorBox({
+            x1: fit.x, y1: fit.y, x2: fit.x + fit.width, y2: fit.y + fit.height,
+        }));
     }
 });
 
@@ -144,6 +130,31 @@ export class WallpaperLayer {
     relayout() {
         for (const entry of this._entries)
             entry.layer.queue_relayout();
+    }
+
+    /**
+     * What Clutter actually allocated, per layer: the box the layer got from
+     * its background actor, the box the clone was fitted into, and the size the
+     * clone reports for its source. A fill-mode bug shows up as a clone box
+     * that does not cover the layer box, so `status` reports all three.
+     */
+    describe() {
+        const box = a => {
+            const b = a.get_allocation_box();
+            return [Math.round(b.x1), Math.round(b.y1),
+                Math.round(b.x2 - b.x1), Math.round(b.y2 - b.y1)];
+        };
+        return [...this._entries].map(({monitorIndex, layer}) => {
+            const clone = layer.get_first_child();
+            const [, , natW, natH] = clone?.get_preferred_size() ?? [0, 0, 0, 0];
+            return {
+                monitor: monitorIndex,
+                layer: box(layer),
+                clone: clone ? box(clone) : null,
+                source: clone?.source ? box(clone.source) : null,
+                natural: [Math.round(natW), Math.round(natH)],
+            };
+        }).sort((a, b) => a.monitor - b.monitor);
     }
 
     _attach(bgActor, monitorIndex) {
