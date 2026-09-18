@@ -11,6 +11,8 @@ neowallpaperlive set ~/Videos/ocean.mp4   # play on every monitor
 neowallpaperlive exit                     # back to the static wallpaper
 ```
 
+**Demo:** [bilibili](https://www.bilibili.com/video/BV1Bee16jEHN/)
+
 ---
 
 ## What it does

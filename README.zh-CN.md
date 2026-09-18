@@ -11,6 +11,8 @@ neowallpaperlive set ~/Videos/ocean.mp4   # 在所有屏幕上播放
 neowallpaperlive exit                     # 恢复静态壁纸
 ```
 
+**演示视频：** [bilibili](https://www.bilibili.com/video/BV1Bee16jEHN/)
+
 ---
 
 ## 支持的功能
