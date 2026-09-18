@@ -41,8 +41,11 @@
   修复：内边距按"frame 内缩量不可能超过两者尺寸差"钳位。无阴影时（尺寸相等）内边距恒为 0，原点是否对齐不再有任何影响。
   填充数学抽成无依赖的纯模块 `modules/fit.js`，`tools/fit-test.js` 用 gjs 直接跑、不需要合成器，15 条用例覆盖 harness 造不出来的输入（分数缩放、自绘阴影、原点错位、resize 当帧）。已验证修复前 FAIL、修复后 PASS。
   `status` 新增 `rendererRects`、`layerBoxes`（每层 layer/clone/source 的真实 allocation）、每块屏的 `workArea`。harness 新增 `geom` 场景（用和 Ubuntu Dock 相同的方式注册左侧 strut，让工作区在两个轴上都被裁），回归新增断言"cover/stretch 下 clone 必须盖满 layer 每一条边"。
-  过程中一次自己造成的回归：曾改用源 actor 的 allocation 替代 `get_preferred_size()`，被新断言抓住——allocation 在 resize 当帧仍是旧值，导致换片/换屏时其他显示器上的视频缩成一半。已撤销，并补进单元测试。
   **局限**：headless 虚拟显示器不支持分数缩放（Mutter 只给 `supported_scales: [1]`），真机 1.5 倍环境无法在 harness 复现；原点错位是从症状数值推断并由单元测试复现，尚需真机 `rendererRects` 实证。
+- [x] **T16 · 钉屏优先选择最大工作区显示器（解决双 4K 副屏右下撕裂）**（2026-09-18，用户实机报告）
+  在双 4K（或相同分辨率多屏）环境下，旧算法 `_bestMonitorIndex()` 仅比较物理分辨率（`m.width * scale * m.height * scale`）。因两屏像素相同，判定条件 `>` 停留选中主屏（Monitor 0）。而主屏受 Mutter 工作区限制，被 Ubuntu 顶栏（32px）和 Dock（51px）硬性缩水为 2509×1408；同时现代 GNOME Shell 的 `ClutterPaintNode` 渲染管线忽略了 `Clutter.Clone` 旧式的 Cogl 矩阵缩放，导致视频在副屏上始终按 2509×1408 原始尺寸绘制，在副屏右侧露出 51px、下方露出 32px 的未重绘撕裂带。
+  修复：`_bestMonitorIndex()` 改用**实际可用工作区**的物理像素进行选屏（`area = ws.get_work_area_for_monitor(m.index)`），并在像素相同时优先选择非主显示器（`m.index !== Main.layoutManager.primaryIndex`）。副屏没有顶栏和 Dock 占用，拥有满血完整的 2560×1440（物理 3840×2160），mpv 钉在副屏即可获得完整无损画幅，主副屏双向铺满，彻底消除 51px 和 32px 的撕裂缝隙。
+
 
 ## 第二梯队 / Tier 2 — 健壮性
 

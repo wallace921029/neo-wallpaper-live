@@ -334,16 +334,24 @@ export class Renderer {
         });
     }
 
-    // mpv's surface is capped at the size of the monitor it sits on, so the
-    // monitor with the most physical pixels decides how sharp the video can be
-    // on every monitor. Keep the window there.
+    // mpv's surface is capped at the work area of the monitor it sits on (Mutter
+    // constrains normal windows to the work area, subtracting topbar and dock),
+    // so the monitor with the most physical work-area pixels decides how sharp
+    // the video can be on every monitor. Keep the window there.
     _bestMonitorIndex() {
         let best = null;
         let bestPixels = -1;
+        const ws = global.workspace_manager?.get_active_workspace();
         for (const m of Main.layoutManager.monitors) {
             const scale = m.geometry_scale || 1;
-            const pixels = m.width * scale * m.height * scale;
-            if (pixels > bestPixels) {
+            let area = m;
+            try {
+                if (ws)
+                    area = ws.get_work_area_for_monitor(m.index) || m;
+            } catch {}
+            const pixels = area.width * scale * area.height * scale;
+            if (pixels > bestPixels ||
+                (pixels === bestPixels && m.index !== Main.layoutManager.primaryIndex)) {
                 bestPixels = pixels;
                 best = m.index;
             }
