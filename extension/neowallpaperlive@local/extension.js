@@ -55,6 +55,7 @@ export default class NeoWallpaperLiveExtension extends Extension {
                 this._syncAwake();
             },
             onIpc: ipc => this._autoPause.setIpc(ipc),
+            onNeedsRestart: () => this._restart(),
             getExtraArgs: () => this._settings.get_strv('mpv-extra-args'),
         });
         this._control = new Control(() => this._status());

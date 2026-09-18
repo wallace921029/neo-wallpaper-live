@@ -113,6 +113,9 @@ for sc in scenarios:
     if sc == "pin":
         off = [x["step"] for x in r if not x["win"].startswith("m0/") and not x["step"].startswith("force")]
         check(sc, "renderer stays on the largest monitor (T3)", not off, ",".join(off))
+        # The pin must not reach for a restart when move_to_monitor works.
+        check(sc, "pinning does not restart the renderer (T14)",
+              len({x["pid"] for x in r}) == 1, ",".join(sorted({x["pid"] for x in r})))
         forced = [x for x in r if x["step"].startswith("force")]
         check(sc, "forcing it onto the small monitor really shrinks the buffer",
               all(x["win"].startswith("m1/1280x1024") for x in forced),

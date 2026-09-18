@@ -28,7 +28,7 @@ neowallpaperlive exit                     # 恢复静态壁纸
 | **热插拔**——插拔坞站、外接 1 块或 3 块 | 播放不会重启，图层自动跟随显示器 |
 | 位于 GNOME 的**背景层** | 不受"显示桌面"、切换工作区、Alt+Tab、Dock 影响；概览里的工作区预览和工作区切换动画中也有视频 |
 | 不抢输入 | 桌面右键、框选图标一切正常 |
-| **硬件解码** | VA-API（AMD / Intel）、NVDEC（NVIDIA）、Vulkan——`mpv --hwdec=auto-safe` 能找到什么就用什么。AMD 780M 上 4K60 H.264 约 5 % CPU |
+| **硬件解码** | VA-API（AMD / Intel）、NVDEC（NVIDIA）、Vulkan——`mpv --hwdec=auto-safe` 能找到什么就用什么。AMD 780M 实测 4K60 H.264：mpv 约占单核 7 %，另加 GNOME Shell 合成到两块屏的约 9 % |
 | 设置跨登录保留 | 登录后自动开始播放 |
 | **无缝切换** | `set` 直接在运行中的渲染器里换片，换壁纸不会闪一下静态背景 |
 | 锁屏时停止、解锁后恢复 | 省电；锁屏保持系统原有背景 |

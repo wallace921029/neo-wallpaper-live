@@ -14,28 +14,53 @@ SELF="$(realpath -- "${BASH_SOURCE[0]}")"
 
 usage() {
     cat <<EOF
-Usage: neowallpaperlive <command> [args]
+NeoWallpaperLive — live video wallpaper on every monitor
 
-  set FILE            play FILE as the wallpaper on every monitor (and enable)
-  exit | stop         stop playing (keeps FILE remembered)
-  start | resume      play the remembered FILE again
-  status              show settings, extension state and renderer state
-  fill MODE           cover (default) | contain | stretch
-  awake on|off        keep the computer awake (no suspend, no screen blanking / lock)
-                      while the wallpaper is playing; default off
-  autopause [RULE on|off]
-                      show or set auto-pause rules. RULE = covered (default on:
-                      every monitor hidden behind windows) | fullscreen (default on:
-                      a fullscreen app is on top) | battery (default off)
-  mpv-args [ARG...]   extra mpv arguments for troubleshooting; no ARG clears them
-  log                 follow the extension's log (Ctrl-C to stop)
-  uninstall [-y]      remove the extension, the CLI and all settings
-  help                this text
+Usage: neowallpaperlive <command> [arguments]
 
-Examples:
+Playback
+  set FILE                play FILE on every monitor, and remember it
+  exit | stop             stop playing; the static wallpaper comes back
+  start | resume          play the remembered file again
+  fill MODE               how the video is fitted to each monitor
+                            MODE: cover (default) | contain | stretch
+
+Power saving
+  autopause               show the three rules and whether the video is
+                          paused right now
+  autopause RULE on|off   turn one rule on or off
+                            covered     pause when every monitor is hidden
+                                        behind windows            (default on)
+                            fullscreen  pause while a fullscreen app is on
+                                        top of any monitor        (default on)
+                            battery     pause while running on battery
+                                                                  (default off)
+  awake on|off            keep the computer awake — no automatic suspend and
+                          no screen blanking or locking — while the wallpaper
+                          is playing                              (default off)
+
+Diagnostics
+  status                  settings plus live state: monitors, renderer pid,
+                          decoder in use, playback position
+  log                     follow the extension's log (Ctrl-C to stop)
+  mpv-args [ARG...]       extra mpv flags for troubleshooting;
+                          with no arguments, clears them
+
+Other
+  uninstall [-y]          remove the extension, the CLI and all settings
+  help                    this text
+
+Examples
   neowallpaperlive set ~/Videos/ocean.mp4
+  neowallpaperlive autopause                   # see what is set right now
+  neowallpaperlive autopause fullscreen off    # keep playing behind games
+  neowallpaperlive autopause battery on        # save power on a laptop
+  neowallpaperlive fill contain                # letterbox instead of cropping
   neowallpaperlive awake on
   neowallpaperlive exit
+
+Every setting is remembered across logins. After installing or updating the
+extension, log out and back in before the new code takes effect.
 EOF
 }
 

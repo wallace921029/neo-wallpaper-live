@@ -28,7 +28,7 @@ neowallpaperlive exit                     # back to the static wallpaper
 | **Hot-plug** — dock / undock, 1 or 3 externals | playback never restarts; layers follow the monitors |
 | Lives in GNOME's **background layer** | unaffected by *show desktop*, workspace switches, Alt+Tab, the dock; the video also appears in the overview's workspace previews and workspace-switch animations |
 | Never steals input | right-click / drag-select on the desktop work normally |
-| **Hardware decoding** | VA-API (AMD / Intel), NVDEC (NVIDIA), Vulkan — whatever `mpv --hwdec=auto-safe` finds. 4K60 H.264 ≈ 5 % CPU on an AMD 780M |
+| **Hardware decoding** | VA-API (AMD / Intel), NVDEC (NVIDIA), Vulkan — whatever `mpv --hwdec=auto-safe` finds. 4K60 H.264 on an AMD 780M measured at ~7 % of one core for mpv, plus ~9 % for GNOME Shell compositing it onto two screens |
 | Remembered across logins | starts automatically at login |
 | **Seamless switching** | `set` swaps the file inside the running renderer, so changing wallpaper never flashes the static background |
 | Stops while the screen is locked, resumes on unlock | saves power; the lock screen keeps its normal background |

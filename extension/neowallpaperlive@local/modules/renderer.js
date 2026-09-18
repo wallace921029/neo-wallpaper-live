@@ -15,6 +15,14 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {APP_ID, TITLE_PREFIX, isRendererWindow, log, logWarn} from './constants.js';
 import {MpvIpc, sleep, withTimeout} from './mpvipc.js';
 
+const SETTLE_DELAY_MS = 500;
+// After a monitor change, let the new layout settle, pin, then confirm the
+// move actually happened before falling back to a restart.
+const PIN_SETTLE_MS = 800;
+const PIN_VERIFY_MS = 800;
+const PIN_RESTART_MAX = 2;
+const SETTLE_FALLBACK_MS = 3000;
+
 const SWITCH_TIMEOUT_MS = 1000;
 const SWITCH_CONFIRM_TRIES = 20;   // x SWITCH_CONFIRM_INTERVAL_MS
 const SWITCH_CONFIRM_INTERVAL_MS = 100;
@@ -29,12 +37,14 @@ export class Renderer {
      * @param {(actor: Meta.WindowActor, win: Meta.Window) => void} callbacks.onReady
      * @param {() => void} callbacks.onLost
      * @param {(ipc: MpvIpc | null) => void} callbacks.onIpc
+     * @param {() => void} callbacks.onNeedsRestart
      * @param {() => string[]} callbacks.getExtraArgs
      */
-    constructor({onReady, onLost, onIpc, getExtraArgs}) {
+    constructor({onReady, onLost, onIpc, onNeedsRestart, getExtraArgs}) {
         this._onReady = onReady;
         this._onLost = onLost;
         this._onIpc = onIpc;
+        this._onNeedsRestart = onNeedsRestart;
         this._getExtraArgs = getExtraArgs;
 
         this._videoPath = null;
@@ -51,6 +61,12 @@ export class Renderer {
         this._respawnSource = 0;
         this._respawnTimes = [];
         this._stopping = false;
+        this._firstFrame = false;
+        this._settled = false;
+        this._settleFallback = 0;
+        this._pinSource = 0;
+        this._pinVerifySource = 0;
+        this._pinRestarts = 0;
     }
 
     get videoPath() {
@@ -105,6 +121,8 @@ export class Renderer {
         this._stopping = false;
         this._videoPath = videoPath;
         this._respawnTimes = [];
+        this._firstFrame = false;
+        this._settled = false;
 
         if (!this._windowCreatedId) {
             this._windowCreatedId = global.display.connect('window-created',
@@ -112,7 +130,7 @@ export class Renderer {
         }
         if (!this._monitorsChangedId) {
             this._monitorsChangedId = Main.layoutManager.connect('monitors-changed',
-                () => this._pinToBestMonitor());
+                () => this._schedulePinCheck());
         }
         this._spawn();
     }
@@ -159,6 +177,16 @@ export class Renderer {
         if (this._respawnSource) {
             GLib.source_remove(this._respawnSource);
             this._respawnSource = 0;
+        }
+        if (this._settleFallback) {
+            GLib.source_remove(this._settleFallback);
+            this._settleFallback = 0;
+        }
+        for (const name of ['_pinSource', '_pinVerifySource']) {
+            if (this[name]) {
+                GLib.source_remove(this[name]);
+                this[name] = 0;
+            }
         }
         if (this._windowCreatedId) {
             global.display.disconnect(this._windowCreatedId);
@@ -234,8 +262,9 @@ export class Renderer {
         const ipc = new MpvIpc(this._ipcPath());
         this._ipc = ipc;
         ipc.connect().then(ok => {
-            if (ok && this._ipc === ipc)
-                this._onIpc(ipc);
+            if (!ok || this._ipc !== ipc)
+                return;
+            this._onIpc(ipc);
         }).catch(e => logWarn(`mpv ipc: ${e.message}`));
 
         const proc = this._proc;
@@ -307,6 +336,46 @@ export class Renderer {
         return best;
     }
 
+    /**
+     * Pin once the monitor layout has settled, then make sure it took:
+     * move_to_monitor() on the hidden renderer window is not always honoured
+     * (seen after a hot-plug, leaving a 4K screen fed from a smaller buffer),
+     * and a restart always lands correctly.
+     */
+    _schedulePinCheck() {
+        if (this._pinSource)
+            GLib.source_remove(this._pinSource);
+        this._pinSource = GLib.timeout_add(GLib.PRIORITY_DEFAULT, PIN_SETTLE_MS, () => {
+            this._pinSource = 0;
+            this._pinToBestMonitor();
+
+            if (this._pinVerifySource)
+                GLib.source_remove(this._pinVerifySource);
+            this._pinVerifySource = GLib.timeout_add(GLib.PRIORITY_DEFAULT, PIN_VERIFY_MS, () => {
+                this._pinVerifySource = 0;
+                this._verifyPin();
+                return GLib.SOURCE_REMOVE;
+            });
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    _verifyPin() {
+        const win = this._win;
+        const target = this._bestMonitorIndex();
+        if (!win || target === null || win.get_monitor() === target) {
+            this._pinRestarts = 0;
+            return;
+        }
+        if (this._pinRestarts >= PIN_RESTART_MAX) {
+            logWarn(`renderer will not move to monitor ${target}; leaving it on ${win.get_monitor()}`);
+            return;
+        }
+        this._pinRestarts++;
+        logWarn(`renderer is still on monitor ${win.get_monitor()} instead of ${target}, restarting it`);
+        this._onNeedsRestart();
+    }
+
     _pinToBestMonitor() {
         const win = this._win;
         if (!win)
@@ -316,6 +385,30 @@ export class Renderer {
             return;
         log(`pinning renderer to monitor ${target} (most pixels)`);
         win.move_to_monitor(target);
+    }
+
+    /**
+     * Mutter places the window itself around the first frame, overriding
+     * anything done at adoption time, so the monitor is only pinned once that
+     * has settled. Mutter also caps the window at its monitor's work area and
+     * neither move_resize_frame() nor mpv's window-scale gets past that, so the
+     * video is rendered a few percent below its native size and scaled back up.
+     */
+    _settle() {
+        if (this._settled || !this._firstFrame || !this._win)
+            return;
+        this._settled = true;
+        this._pinToBestMonitor();
+        this._hideWindow();
+        this._schedulePinCheck();
+    }
+
+    _hideWindow() {
+        const win = this._win;
+        if (!win || win.minimized)
+            return;
+        log('hiding renderer window');
+        win.minimize();
     }
 
     _dropIpc() {
@@ -399,12 +492,23 @@ export class Renderer {
             if (this._win !== win)
                 return;
             const {width, height} = win.get_buffer_rect();
-            log(`renderer first frame (${width}x${height}), hiding window`);
-            if (!win.minimized)
-                win.minimize();
+            log(`renderer first frame (${width}x${height})`);
+            // Mutter applies its size constraints after the first frame, so
+            // give it a moment before reading and correcting the geometry.
+            this._firstFrame = true;
+            GLib.timeout_add(GLib.PRIORITY_DEFAULT, SETTLE_DELAY_MS, () => {
+                this._settle();
+                return GLib.SOURCE_REMOVE;
+            });
+            // Hide it even if the geometry pass never completes.
+            if (!this._settleFallback) {
+                this._settleFallback = GLib.timeout_add(GLib.PRIORITY_DEFAULT, SETTLE_FALLBACK_MS, () => {
+                    this._settleFallback = 0;
+                    this._hideWindow();
+                    return GLib.SOURCE_REMOVE;
+                });
+            }
         }));
-
-        this._pinToBestMonitor();
 
         log('renderer window adopted');
         this._onReady(actor, win);
