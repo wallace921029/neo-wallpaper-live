@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.neowallpaperlive"
+          path="/org/gnome/shell/extensions/neowallpaperlive/">
+    <key name="video-path" type="s">
+      <default>''</default>
+      <summary>Absolute path of the video to play</summary>
+      <description>Empty means no wallpaper. Set with: neowallpaperlive set FILE</description>
+    </key>
+    <key name="enabled" type="b">
+      <default>true</default>
+      <summary>Whether the live wallpaper is playing</summary>
+      <description>neowallpaperlive exit sets this to false without forgetting video-path.</description>
+    </key>
+    <key name="fill-mode" type="s">
+      <choices>
+        <choice value="cover"/>
+        <choice value="contain"/>
+        <choice value="stretch"/>
+      </choices>
+      <default>'cover'</default>
+      <summary>How the video is fitted to each monitor</summary>
+      <description>cover: scale to fill, crop the excess (default). contain: scale to fit, letterbox shows the static wallpaper. stretch: ignore aspect ratio.</description>
+    </key>
+    <key name="mpv-extra-args" type="as">
+      <default>[]</default>
+      <summary>Extra command-line arguments appended to the mpv renderer</summary>
+      <description>For troubleshooting, e.g. ['--vo=gpu-next'] or ['--hwdec=no'].</description>
+    </key>
+  </schema>
+</schemalist>

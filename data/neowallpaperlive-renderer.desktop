@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=NeoWallpaperLive Renderer
+Comment=Internal video renderer for the NeoWallpaperLive GNOME extension (not meant to be launched)
+Exec=false
+NoDisplay=true
+StartupWMClass=neowallpaperlive-renderer

@@ -1,0 +1,5 @@
+*.compiled
+tools/out/
+tools/xdg/
+tools/*.mp4
+tools/steps.txt

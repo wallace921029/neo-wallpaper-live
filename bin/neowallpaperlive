@@ -1,0 +1,183 @@
+#!/usr/bin/env bash
+# neowallpaperlive — command-line control for the NeoWallpaperLive GNOME extension.
+# All state lives in GSettings; the extension reacts to changes immediately.
+set -euo pipefail
+
+UUID="neowallpaperlive@local"
+SCHEMA="org.gnome.shell.extensions.neowallpaperlive"
+DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+EXT_DIR="$DATA_HOME/gnome-shell/extensions/$UUID"
+DESKTOP_FILE="$DATA_HOME/applications/neowallpaperlive-renderer.desktop"
+BUS="org.neowallpaperlive.Control"
+OBJ="/org/neowallpaperlive/Control"
+SELF="$(realpath -- "${BASH_SOURCE[0]}")"
+
+usage() {
+    cat <<EOF
+Usage: neowallpaperlive <command> [args]
+
+  set FILE            play FILE as the wallpaper on every monitor (and enable)
+  exit | stop         stop playing (keeps FILE remembered)
+  start | resume      play the remembered FILE again
+  status              show settings, extension state and renderer state
+  fill MODE           cover (default) | contain | stretch
+  mpv-args [ARG...]   extra mpv arguments for troubleshooting; no ARG clears them
+  log                 follow the extension's log (Ctrl-C to stop)
+  uninstall [-y]      remove the extension, the CLI and all settings
+  help                this text
+
+Examples:
+  neowallpaperlive set ~/Videos/ocean.mp4
+  neowallpaperlive exit
+EOF
+}
+
+die() { echo "neowallpaperlive: $*" >&2; exit 1; }
+
+gs() { gsettings --schemadir "$EXT_DIR/schemas" "$@"; }
+
+# GVariant string literal: single quotes, escape backslash and quote.
+gvariant_string() {
+    local s=$1
+    s=${s//\\/\\\\}
+    s=${s//\'/\\\'}
+    printf "'%s'" "$s"
+}
+
+check_installed() {
+    [[ -f "$EXT_DIR/schemas/gschemas.compiled" ]] ||
+        die "extension not installed. Run install.sh from the repository first."
+}
+
+extension_state() {
+    gnome-extensions info "$UUID" 2>/dev/null | awk -F': *' '/^ *State:/{print $2}' || true
+}
+
+hint_if_not_active() {
+    local state
+    state=$(extension_state)
+    case "$state" in
+        ACTIVE) ;;
+        "") echo "note: GNOME Shell does not know the extension yet — log out and back in, then run this again." ;;
+        *)  echo "note: extension state is '$state' (expected ACTIVE). Try: gnome-extensions enable $UUID, or log out and back in." ;;
+    esac
+}
+
+dbus_status() {
+    gdbus call --session --dest "$BUS" --object-path "$OBJ" --method "$BUS.Status" 2>/dev/null |
+        python3 -c 'import ast,sys,json
+raw=sys.stdin.read().strip()
+if not raw: sys.exit(1)
+print(json.dumps(json.loads(ast.literal_eval(raw)[0]), indent=2))' 2>/dev/null
+}
+
+cmd_set() {
+    [[ $# -eq 1 ]] || die "usage: neowallpaperlive set FILE"
+    local file=$1 path
+    [[ -f "$file" ]] || die "no such file: $file"
+    path=$(realpath -- "$file")
+    check_installed
+    gs set "$SCHEMA" video-path "$(gvariant_string "$path")"
+    gs set "$SCHEMA" enabled true
+    echo "wallpaper: $path"
+    hint_if_not_active
+}
+
+cmd_exit() {
+    check_installed
+    gs set "$SCHEMA" enabled false
+    echo "stopped (video path kept; 'neowallpaperlive start' resumes)"
+}
+
+cmd_start() {
+    check_installed
+    local path
+    path=$(gs get "$SCHEMA" video-path | sed "s/^'//; s/'\$//")
+    [[ -n "$path" ]] || die "no video set yet. Use: neowallpaperlive set FILE"
+    gs set "$SCHEMA" enabled true
+    echo "wallpaper: $path"
+    hint_if_not_active
+}
+
+cmd_fill() {
+    [[ $# -eq 1 ]] || die "usage: neowallpaperlive fill cover|contain|stretch"
+    case "$1" in cover|contain|stretch) ;; *) die "unknown fill mode: $1" ;; esac
+    check_installed
+    gs set "$SCHEMA" fill-mode "'$1'"
+    echo "fill mode: $1"
+}
+
+cmd_mpv_args() {
+    check_installed
+    if [[ $# -eq 0 ]]; then
+        gs set "$SCHEMA" mpv-extra-args "[]"
+        echo "mpv extra args cleared"
+        return
+    fi
+    local list="" a
+    for a in "$@"; do
+        list+="${list:+, }$(gvariant_string "$a")"
+    done
+    gs set "$SCHEMA" mpv-extra-args "[$list]"
+    echo "mpv extra args: $*"
+}
+
+cmd_status() {
+    check_installed
+    echo "extension:  $UUID  state=$(extension_state)"
+    echo "session:    ${XDG_SESSION_TYPE:-unknown}  gnome-shell $(gnome-shell --version 2>/dev/null | awk '{print $3}')"
+    echo "video-path: $(gs get "$SCHEMA" video-path)"
+    echo "enabled:    $(gs get "$SCHEMA" enabled)"
+    echo "fill-mode:  $(gs get "$SCHEMA" fill-mode)"
+    echo "mpv-args:   $(gs get "$SCHEMA" mpv-extra-args)"
+    echo "runtime:"
+    if ! dbus_status | sed 's/^/  /'; then
+        echo "  (extension not reachable on D-Bus — not loaded in this session)"
+        hint_if_not_active
+    fi
+}
+
+cmd_log() {
+    exec journalctl --user -f -o cat _COMM=gnome-shell | grep --line-buffered -i 'neowallpaperlive'
+}
+
+cmd_uninstall() {
+    local yes=0
+    [[ "${1:-}" == "-y" ]] && yes=1
+    if [[ $yes -eq 0 ]]; then
+        read -r -p "Remove NeoWallpaperLive (extension, CLI, settings)? [y/N] " ans
+        [[ "$ans" =~ ^[Yy]$ ]] || { echo "aborted"; exit 0; }
+    fi
+    if [[ -f "$EXT_DIR/schemas/gschemas.compiled" ]]; then
+        gs set "$SCHEMA" enabled false 2>/dev/null || true
+    fi
+    gnome-extensions disable "$UUID" 2>/dev/null || true
+    rm -rf -- "$EXT_DIR"
+    rm -f -- "$DESKTOP_FILE"
+    command -v update-desktop-database >/dev/null && update-desktop-database "$DATA_HOME/applications" 2>/dev/null || true
+    command -v dconf >/dev/null && dconf reset -f /org/gnome/shell/extensions/neowallpaperlive/ 2>/dev/null || true
+    echo "removed extension, desktop entry and settings"
+    echo "removing CLI: $SELF"
+    # Delete ourselves after this process exits so bash never reads a deleted script.
+    nohup bash -c 'sleep 0.5; rm -f -- "$1"' _ "$SELF" >/dev/null 2>&1 &
+    echo "done. Log out and back in to fully unload the extension from GNOME Shell."
+}
+
+main() {
+    local cmd=${1:-help}
+    shift || true
+    case "$cmd" in
+        set)            cmd_set "$@" ;;
+        exit|stop)      cmd_exit ;;
+        start|resume)   cmd_start ;;
+        status)         cmd_status ;;
+        fill)           cmd_fill "$@" ;;
+        mpv-args)       cmd_mpv_args "$@" ;;
+        log)            cmd_log ;;
+        uninstall)      cmd_uninstall "$@" ;;
+        help|-h|--help) usage ;;
+        *)              usage >&2; exit 2 ;;
+    esac
+}
+
+main "$@"

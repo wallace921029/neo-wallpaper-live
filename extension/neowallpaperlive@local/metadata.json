@@ -1,0 +1,8 @@
+{
+  "name": "NeoWallpaperLive",
+  "description": "One video, every monitor. Live video wallpaper for GNOME 50 on Wayland: a single hardware-decoded mpv renderer cloned into each monitor's background layer (cover fill), controlled from the neowallpaperlive CLI.",
+  "uuid": "neowallpaperlive@local",
+  "shell-version": ["50"],
+  "settings-schema": "org.gnome.shell.extensions.neowallpaperlive",
+  "version": 1
+}
