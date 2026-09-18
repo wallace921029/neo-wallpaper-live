@@ -21,6 +21,8 @@ Usage: neowallpaperlive <command> [args]
   start | resume      play the remembered FILE again
   status              show settings, extension state and renderer state
   fill MODE           cover (default) | contain | stretch
+  awake on|off        keep the computer awake (no suspend, no screen blanking / lock)
+                      while the wallpaper is playing; default off
   mpv-args [ARG...]   extra mpv arguments for troubleshooting; no ARG clears them
   log                 follow the extension's log (Ctrl-C to stop)
   uninstall [-y]      remove the extension, the CLI and all settings
@@ -28,6 +30,7 @@ Usage: neowallpaperlive <command> [args]
 
 Examples:
   neowallpaperlive set ~/Videos/ocean.mp4
+  neowallpaperlive awake on
   neowallpaperlive exit
 EOF
 }
@@ -69,6 +72,60 @@ dbus_status() {
 raw=sys.stdin.read().strip()
 if not raw: sys.exit(1)
 print(json.dumps(json.loads(ast.literal_eval(raw)[0]), indent=2))' 2>/dev/null
+}
+
+# One field of the runtime status, or empty if the extension is not reachable.
+runtime_field() {
+    gdbus call --session --dest "$BUS" --object-path "$OBJ" --method "$BUS.Status" 2>/dev/null |
+        python3 -c 'import ast,sys,json
+raw=sys.stdin.read().strip()
+if not raw: sys.exit(1)
+v=json.loads(ast.literal_eval(raw)[0])
+for k in sys.argv[1].split("."): v=v.get(k) if isinstance(v,dict) else None
+print("" if v is None else str(v).lower() if isinstance(v,bool) else v)' "$1" 2>/dev/null
+}
+
+# Number of keep-awake inhibitors registered at gnome-session in our name.
+awake_inhibitors() {
+    local n=0 o
+    for o in $(gdbus call --session --dest org.gnome.SessionManager --object-path /org/gnome/SessionManager \
+                --method org.gnome.SessionManager.GetInhibitors 2>/dev/null | grep -o "/org/gnome/SessionManager/Inhibitor[0-9]*"); do
+        gdbus call --session --dest org.gnome.SessionManager --object-path "$o" \
+            --method org.gnome.SessionManager.Inhibitor.GetAppId 2>/dev/null | grep -q "'neowallpaperlive'" && n=$((n+1))
+    done
+    echo "$n"
+}
+
+cmd_awake() {
+    [[ $# -eq 1 ]] || die "usage: neowallpaperlive awake on|off"
+    check_installed
+    case "$1" in
+        on)
+            gs set "$SCHEMA" keep-awake true
+            local playing
+            playing=$(runtime_field playing)
+            if [[ "$playing" == "true" ]]; then
+                sleep 0.5
+                if [[ "$(runtime_field keepAwake.active)" == "true" ]]; then
+                    echo "keep-awake: on (active — no suspend, no screen blanking while the wallpaper plays)"
+                else
+                    echo "keep-awake: on, but not active: $(runtime_field keepAwake.error)"
+                fi
+            elif [[ -z "$playing" ]]; then
+                echo "keep-awake: on (remembered)"
+                echo "note: extension not reachable in this session; it takes effect once the wallpaper plays."
+                hint_if_not_active
+            else
+                echo "keep-awake: on (remembered)"
+                echo "note: the wallpaper is not playing, so nothing is inhibited yet. It takes effect after: neowallpaperlive start"
+            fi
+            ;;
+        off)
+            gs set "$SCHEMA" keep-awake false
+            echo "keep-awake: off"
+            ;;
+        *) die "usage: neowallpaperlive awake on|off" ;;
+    esac
 }
 
 cmd_set() {
@@ -129,6 +186,7 @@ cmd_status() {
     echo "video-path: $(gs get "$SCHEMA" video-path)"
     echo "enabled:    $(gs get "$SCHEMA" enabled)"
     echo "fill-mode:  $(gs get "$SCHEMA" fill-mode)"
+    echo "keep-awake: $(gs get "$SCHEMA" keep-awake)"
     echo "mpv-args:   $(gs get "$SCHEMA" mpv-extra-args)"
     echo "runtime:"
     if ! dbus_status | sed 's/^/  /'; then
@@ -149,9 +207,20 @@ cmd_uninstall() {
         [[ "$ans" =~ ^[Yy]$ ]] || { echo "aborted"; exit 0; }
     fi
     if [[ -f "$EXT_DIR/schemas/gschemas.compiled" ]]; then
+        # Release the keep-awake inhibitor first, then stop playback; the
+        # running extension reacts to both before it is disabled below.
+        gs set "$SCHEMA" keep-awake false 2>/dev/null || true
         gs set "$SCHEMA" enabled false 2>/dev/null || true
+        sleep 0.5
     fi
     gnome-extensions disable "$UUID" 2>/dev/null || true
+    sleep 0.5
+    if [[ "$(awake_inhibitors)" != "0" ]]; then
+        echo "warning: a keep-awake inhibitor is still registered with gnome-session;" >&2
+        echo "         it is released when you log out. (gnome-session-inhibit --list shows it)" >&2
+    else
+        echo "keep-awake: no inhibitor left behind"
+    fi
     rm -rf -- "$EXT_DIR"
     rm -f -- "$DESKTOP_FILE"
     command -v update-desktop-database >/dev/null && update-desktop-database "$DATA_HOME/applications" 2>/dev/null || true
@@ -172,6 +241,7 @@ main() {
         start|resume)   cmd_start ;;
         status)         cmd_status ;;
         fill)           cmd_fill "$@" ;;
+        awake)          cmd_awake "$@" ;;
         mpv-args)       cmd_mpv_args "$@" ;;
         log)            cmd_log ;;
         uninstall)      cmd_uninstall "$@" ;;

@@ -26,6 +26,7 @@ neowallpaperlive exit                     # 恢复静态壁纸
 | **硬件解码** | VA-API（AMD / Intel）、NVDEC（NVIDIA）、Vulkan——`mpv --hwdec=auto-safe` 能找到什么就用什么。AMD 780M 上 4K60 H.264 约 5 % CPU |
 | 设置跨登录保留 | 登录后自动开始播放 |
 | 锁屏时停止、解锁后恢复 | 省电；锁屏保持系统原有背景 |
+| **保持唤醒**开关（`awake on`） | 壁纸播放期间：不自动挂起、不自动息屏/锁屏。默认关闭；`exit`、锁屏、卸载时自动释放 |
 | 渲染进程崩溃自动恢复 | mpv 会自动重启（带退避） |
 | mpv/FFmpeg 能播的格式都行 | mp4、mkv、webm、mov、gif…… |
 | 永远不出声 | 壁纸设计上就是静音的 |
@@ -101,6 +102,7 @@ neowallpaperlive exit              停止；恢复静态壁纸
 neowallpaperlive start             继续播放上次的文件
 neowallpaperlive status            设置 + 运行状态（显示器、渲染进程 pid……）
 neowallpaperlive fill MODE         cover（默认）| contain | stretch
+neowallpaperlive awake on|off      壁纸播放期间保持电脑唤醒（默认 off）
 neowallpaperlive mpv-args [ARG…]   排障用的额外 mpv 参数；不带参数则清空
 neowallpaperlive log               实时查看扩展日志
 neowallpaperlive uninstall         删除扩展、CLI、desktop 条目和全部设置
@@ -110,6 +112,7 @@ neowallpaperlive uninstall         删除扩展、CLI、desktop 条目和全部�
 - 选一个分辨率不低于最大显示器的视频：4K 源在 4K 屏上是清晰的，1080p 会被放大。
 - 10–60 秒、首尾无缝衔接的短片效果最好。
 - 宁要黑边不要裁切的话：`neowallpaperlive fill contain`。
+- 想让屏幕像演示模式一样常亮：`neowallpaperlive awake on`。它只在视频真正播放时才生效（`exit` 后立即释放），用的是 gnome-session 的标准 inhibitor（和视频播放器同一套），设置跨登录保留；`status` 可以看到当前是否已生效。
 
 ## 卸载
 
@@ -127,6 +130,7 @@ neowallpaperlive uninstall
 | 显示的是静态壁纸，`status` 里 `playing: false` | `neowallpaperlive log` 里有 mpv 转发的报错。直接测试文件：`mpv 文件`。 |
 | CPU 占用高 | 硬解没生效。用 `mpv --hwdec=auto-safe --msg-level=vd=v 文件` 检查；按上表装 VA-API / NVIDIA 相关包。 |
 | 绿屏 / 花屏 | 试 `neowallpaperlive mpv-args --vo=gpu-next`，或用 `--hwdec=no` 排除解码器问题。 |
+| `awake on` 了但屏幕还是会黑 / 电脑还是会睡 | `neowallpaperlive status` 里播放期间 `keepAwake.active` 必须是 `true`。若 `error` 有值，说明 gnome-session 没在运行（非 GNOME 会话）。用 `gnome-session-inhibit --list` 看其他 inhibitor。 |
 | 新插的显示器上没有视频 | `neowallpaperlive status` 的 `monitors` 应列出它且 `layers` ≥ 显示器数；否则 `neowallpaperlive exit && neowallpaperlive start`。 |
 
 日志：`journalctl --user -f _COMM=gnome-shell | grep NeoWallpaperLive`。

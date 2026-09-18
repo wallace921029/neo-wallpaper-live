@@ -22,6 +22,11 @@
       <summary>How the video is fitted to each monitor</summary>
       <description>cover: scale to fill, crop the excess (default). contain: scale to fit, letterbox shows the static wallpaper. stretch: ignore aspect ratio.</description>
     </key>
+    <key name="keep-awake" type="b">
+      <default>false</default>
+      <summary>Keep the computer awake while the wallpaper is playing</summary>
+      <description>While a video is playing, inhibit automatic suspend and idle screen blanking/locking (gnome-session flags 4|8). Has no effect while the wallpaper is stopped. Set with: neowallpaperlive awake on|off</description>
+    </key>
     <key name="mpv-extra-args" type="as">
       <default>[]</default>
       <summary>Extra command-line arguments appended to the mpv renderer</summary>

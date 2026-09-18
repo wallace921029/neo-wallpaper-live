@@ -26,6 +26,7 @@ neowallpaperlive exit                     # back to the static wallpaper
 | **Hardware decoding** | VA-API (AMD / Intel), NVDEC (NVIDIA), Vulkan — whatever `mpv --hwdec=auto-safe` finds. 4K60 H.264 ≈ 5 % CPU on an AMD 780M |
 | Remembered across logins | starts automatically at login |
 | Stops while the screen is locked, resumes on unlock | saves power; the lock screen keeps its normal background |
+| **Keep-awake** toggle (`awake on`) | while the wallpaper plays: no automatic suspend, no idle screen blanking / locking. Off by default; released automatically on `exit`, lock, uninstall |
 | Renderer crash recovery | mpv is restarted automatically (with back-off) |
 | Any format mpv/FFmpeg can play | mp4, mkv, webm, mov, gif, … |
 | No audio, ever | wallpapers are silent by design |
@@ -101,6 +102,7 @@ neowallpaperlive exit              stop; the static wallpaper shows again
 neowallpaperlive start             resume the remembered file
 neowallpaperlive status            settings + live state (monitors, renderer pid, …)
 neowallpaperlive fill MODE         cover (default) | contain | stretch
+neowallpaperlive awake on|off      keep the computer awake while the wallpaper plays (default off)
 neowallpaperlive mpv-args [ARG…]   extra mpv flags for troubleshooting; no args clears them
 neowallpaperlive log               follow the extension's log
 neowallpaperlive uninstall         remove the extension, CLI, desktop entry and settings
@@ -110,6 +112,7 @@ Tips
 - Pick a video at least as large as your biggest monitor; a 4K source stays sharp on a 4K panel, 1080p gets upscaled there.
 - A short, seamlessly looping clip (10–60 s) looks best.
 - `neowallpaperlive fill contain` if you would rather see black bars than a crop.
+- `neowallpaperlive awake on` for a presentation-style always-on screen. It only inhibits while a video is actually playing (`exit` releases it), uses gnome-session's standard inhibitor (the same one video players use), and is remembered across logins. `status` shows whether it is currently active.
 
 ## Uninstall
 
@@ -127,6 +130,7 @@ Removes everything the installer put in place and resets the settings. Log out a
 | Static wallpaper, `status` shows `playing: false` | `neowallpaperlive log` — mpv's error is relayed there. Test the file directly: `mpv FILE`. |
 | High CPU | Hardware decoding is not active. Check `mpv --hwdec=auto-safe --msg-level=vd=v FILE`; install the VA-API / NVIDIA packages above. |
 | Green / garbled frames | Try `neowallpaperlive mpv-args --vo=gpu-next`, or `--hwdec=no` to rule out the decoder. |
+| `awake on` but the screen still blanks / the machine sleeps | `neowallpaperlive status` → `keepAwake.active` must be `true` while playing. If `error` is set, gnome-session is not running (non-GNOME session). Check other inhibitors with `gnome-session-inhibit --list`. |
 | Video missing on one monitor after plugging it in | `neowallpaperlive status` should list it under `monitors` with `layers` ≥ monitor count; if not, `neowallpaperlive exit && neowallpaperlive start`. |
 
 Logs: `journalctl --user -f _COMM=gnome-shell | grep NeoWallpaperLive`.

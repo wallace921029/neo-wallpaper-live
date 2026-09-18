@@ -47,7 +47,7 @@ WS1="global.workspace_manager.get_workspace_by_index(1).activate(global.get_curr
 WS0="global.workspace_manager.get_workspace_by_index(0).activate(global.get_current_time()); 'ok'"
 STEALTH="JSON.stringify({actors: global.get_window_actors().length, tab: global.display.get_tab_list(Meta.TabList.NORMAL_ALL, null).length, running: Shell.AppSystem.get_default().get_running().map(a => a.get_id())})"
 case "$SCENARIO" in
-    smoke) STEPS=(s1 "stealth:$STEALTH" "ws1:$WS1" "ws0:$WS0" "rebuild:Main.layoutManager._monitorsChanged(); 'ok'" "ov-show:Main.overview.show(); 'ok'" "ov-hide:Main.overview.hide(); 'ok'" s2 "fill-contain!neowallpaperlive fill contain" "fill-cover!neowallpaperlive fill cover" "exit!neowallpaperlive exit" "start!neowallpaperlive start" s3) ;;
+    smoke) STEPS=(s1 "stealth:$STEALTH" "ws1:$WS1" "ws0:$WS0" "rebuild:Main.layoutManager._monitorsChanged(); 'ok'" "ov-show:Main.overview.show(); 'ok'" "ov-hide:Main.overview.hide(); 'ok'" s2 "fill-contain!neowallpaperlive fill contain" "fill-cover!neowallpaperlive fill cover" "awake-on!neowallpaperlive awake on" "awake-off!neowallpaperlive awake off" "exit!neowallpaperlive exit" "start!neowallpaperlive start" s3) ;;
     soak)  STEPS=(s1 s2 s3 s4 s5 s6 s7 s8 s9 s10 s11 s12 s13 s14 s15) ;;
     all)   STEPS=(s1 "stealth:$STEALTH" "ws1:$WS1" w1 "ws0:$WS0" w2 "rebuild:Main.layoutManager._monitorsChanged(); 'ok'" r1 "ov-show:Main.overview.show(); 'ok'" "ov-hide:Main.overview.hide(); 'ok'" o1 o2 "exit!neowallpaperlive exit" "start!neowallpaperlive start" x1 x2 x3) ;;
     *) echo "unknown scenario: $SCENARIO"; exit 2 ;;
