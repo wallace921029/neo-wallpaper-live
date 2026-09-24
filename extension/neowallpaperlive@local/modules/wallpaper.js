@@ -31,6 +31,20 @@ class NeoWallpaperLayer extends Clutter.Actor {
         this._getSource = getSource;
     }
 
+    // The layer takes its size from the background actor (BindConstraint) and
+    // must never ask for one. Left to the default, it would report the clone's
+    // natural size -- the video's resolution -- and that request travels up
+    // through the background into the overview's workspace previews: in the
+    // app grid, where they are squeezed into a short strip, a 4K video forced
+    // each preview thousands of pixels wide, burying both of them.
+    vfunc_get_preferred_width(_forHeight) {
+        return [0, 0];
+    }
+
+    vfunc_get_preferred_height(_forWidth) {
+        return [0, 0];
+    }
+
     vfunc_allocate(box) {
         this.set_allocation(box);
         const clone = this.get_first_child();
@@ -149,6 +163,9 @@ export class WallpaperLayer {
             const [, , natW, natH] = clone?.get_preferred_size() ?? [0, 0, 0, 0];
             return {
                 monitor: monitorIndex,
+                // Clutter does not lay out what is hidden (the desktop behind
+                // the overview), so an unmapped layer's boxes can be stale.
+                mapped: layer.mapped,
                 layer: box(layer),
                 clone: clone ? box(clone) : null,
                 source: clone?.source ? box(clone.source) : null,

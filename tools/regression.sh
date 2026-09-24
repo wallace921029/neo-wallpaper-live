@@ -11,7 +11,7 @@ set -uo pipefail
 T="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTDIR="$T/out/regression"
 SCENARIOS=("$@")
-[[ ${#SCENARIOS[@]} -eq 0 ]] && SCENARIOS=(smoke soak autopause pin sleep switch geom)
+[[ ${#SCENARIOS[@]} -eq 0 ]] && SCENARIOS=(smoke soak autopause pin sleep switch geom appgrid)
 
 rm -rf "$OUTDIR"; mkdir -p "$OUTDIR"
 
@@ -83,9 +83,14 @@ def uncovered(status):
         return []
     bad = []
     for entry in status.get("layerBoxes") or []:
-        lx, ly, lw, lh = entry["layer"]
-        if not entry["clone"]:
+        # Hidden layers (the desktop behind the overview) are not laid out
+        # until they show again, so only what is on screen can be judged.
+        if not entry.get("mapped", True) or not entry["clone"]:
             continue
+        if None in entry["layer"] or None in entry["clone"]:
+            bad.append(f'{entry["monitor"]}(unallocated)')
+            continue
+        lx, ly, lw, lh = entry["layer"]
         cx, cy, cw, ch = entry["clone"]
         edges = "".join(name for name, slack in
                         (("L", -cx), ("T", -cy), ("R", cx + cw - lw), ("B", cy + ch - lh))
@@ -185,6 +190,20 @@ for sc in scenarios:
         docked = [f for f in (r["frame"] for r in rects) if f[0] > 0 and f[1] > 0]
         check(sc, "the dock strut really insets the renderer (geom)", docked,
               str(docked[0]) if docked else "never inset")
+
+    if sc == "appgrid":
+        def previews(step):
+            m = re.search(r"w=([\d,]*) bg=([\d,]*)", by_step.get(step, {}).get("note", ""))
+            if not m or not m.group(1):
+                return None, None
+            return [int(v) for v in m.group(1).split(",")], [int(v) for v in m.group(2).split(",")]
+        ref, _ = previews("ag-off")
+        check(sc, "app grid previews measured without the video", ref, str(ref))
+        for step in ("ag-on", "ag-on2"):
+            w, bg = previews(step)
+            same = bool(ref and w and len(w) == len(ref) and all(abs(a - b) <= 2 for a, b in zip(w, ref)))
+            check(sc, f"video leaves the app grid previews their size at '{step}'", same, f"{w} vs {ref}")
+            check(sc, f"background asks for no size of its own at '{step}'", bg is not None and not any(bg), str(bg))
 
     if sc == "switch":
         pids = {x["pid"] for x in r}

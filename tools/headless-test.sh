@@ -104,6 +104,17 @@ case "$SCENARIO" in
                 "fill-contain!neowallpaperlive fill contain" c1
                 "fill-stretch!neowallpaperlive fill stretch" c2
                 "fill-cover!neowallpaperlive fill cover" d3) ;;
+    # App grid: the overview squeezes the workspace previews into a short
+    # strip, sized from the work area's aspect ratio. Nothing under the
+    # background may ask for a size of its own, or the previews balloon to the
+    # video's width; so the previews must be exactly as wide with the video on
+    # as with it off. "w" = each preview's width, "bg" = what its background
+    # asks for at that height (0 when it stays out of the way).
+    appgrid) WSW="const r=[];const walk=a=>{if(a.constructor.name==='Workspace'){const b=a.get_allocation_box();const [,bw]=a.get_first_child().get_preferred_width(b.y2-b.y1);r.push([Math.round(b.x2-b.x1),Math.round(bw)]);}a.get_children().forEach(walk);};walk(global.stage);r.sort((x,y)=>x[0]-y[0]);'w='+r.map(x=>x[0]).join(',')+' bg='+r.map(x=>x[1]).join(',')"
+             AG="Main.overview._overview._controls._stateAdjustment.value = 2; 'app grid'"
+             STEPS=(s1 "ov-show:Main.overview.show(); 'ok'" "to-grid:$AG" "ag-on:$WSW"
+                    "video-off!neowallpaperlive exit" "ag-off:$WSW"
+                    "video-on!neowallpaperlive start" "ag-on2:$WSW" "ov-hide:Main.overview.hide(); 'ok'") ;;
     *) echo "unknown scenario: $SCENARIO"; exit 2 ;;
 esac
 printf '%s\n' "${STEPS[@]}" > "$T/steps.txt"

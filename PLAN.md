@@ -46,6 +46,12 @@
   在双 4K（或相同分辨率多屏）环境下，旧算法 `_bestMonitorIndex()` 仅比较物理分辨率（`m.width * scale * m.height * scale`）。因两屏像素相同，判定条件 `>` 停留选中主屏（Monitor 0）。而主屏受 Mutter 工作区限制，被 Ubuntu 顶栏（32px）和 Dock（51px）硬性缩水为 2509×1408；同时现代 GNOME Shell 的 `ClutterPaintNode` 渲染管线忽略了 `Clutter.Clone` 旧式的 Cogl 矩阵缩放，导致视频在副屏上始终按 2509×1408 原始尺寸绘制，在副屏右侧露出 51px、下方露出 32px 的未重绘撕裂带。
   修复：`_bestMonitorIndex()` 改用**实际可用工作区**的物理像素进行选屏（`area = ws.get_work_area_for_monitor(m.index)`），并在像素相同时优先选择非主显示器（`m.index !== Main.layoutManager.primaryIndex`）。副屏没有顶栏和 Dock 占用，拥有满血完整的 2560×1440（物理 3840×2160），mpv 钉在副屏即可获得完整无损画幅，主副屏双向铺满，彻底消除 51px 和 32px 的撕裂缝隙。
 
+- [x] **T17 · 应用程序抽屉里的小桌面被视频挤没**（2026-09-24，用户实机报告）
+  按两次 Super / Super+A 打开应用程序抽屉，顶部本应有两个小桌面预览，开着视频时却只看到一条视频带。
+  这条不是工作区缩略图（`ThumbnailsBox` 在 APP_GRID 下 `opacity = 0`），而是 `_workspacesDisplay` 被压到屏幕高度的 15%（`SMALL_WORKSPACE_RATIO`）。每个 `Workspace` 是 `BinLayout`，宽度取子节点首选宽度的最大值：`WorkspaceLayout` 按工作区宽高比给出正确值（harness 里 288），`WorkspaceBackground` 正常返回 0。我们的 layer 是没有 layout manager 的普通 `Clutter.Actor`，默认把 clone 的首选尺寸——也就是视频分辨率——向上汇报，一路传到 `WorkspaceBackground`，于是预览被撑成视频那么宽（harness 1280，实机 4K 视频约 3840），互相重叠、溢出屏幕。窗口选择器里工作区本来就够大，所以只有应用抽屉暴露。
+  修复：layer 重写 `vfunc_get_preferred_width/height` 返回 `[0, 0]`，尺寸完全来自 `BindConstraint`。
+  harness 新增 `appgrid` 场景：在应用抽屉里开关视频做 A/B，断言开视频时预览宽度与关视频时一致、背景首选宽度为 0。已验证旧代码 FAIL（`w=1280,1280,1280 bg=1280`）、新代码 PASS（`w=288,288,1025 bg=0`）。
+  附带：`status.layerBoxes` 增加 `mapped`；概览打开期间桌面层被隐藏、Clutter 不给它布局，clone 框是"从未分配"的无穷值（旧代码同样如此，无可见影响），覆盖断言改为只判断屏幕上可见的层，但可见层里出现未分配的 clone 仍算失败。
 
 ## 第二梯队 / Tier 2 — 健壮性
 

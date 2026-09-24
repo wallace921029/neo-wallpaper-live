@@ -4,7 +4,7 @@
 
 [中文说明 / Chinese README](README.zh-CN.md)
 
-One video, decoded once by hardware, shown on all connected displays at the same time — laptop panel, 2K, 4K, any mix — each one filled edge to edge. Controlled from a small command line, no GUI.
+One video, decoded once in hardware, fills every connected display edge to edge — laptop panel, 2K, 4K, any mix. Controlled from the command line; no GUI.
 
 ```bash
 neowallpaperlive set ~/Videos/ocean.mp4   # play on every monitor
@@ -15,91 +15,54 @@ neowallpaperlive exit                     # back to the static wallpaper
 
 [![Demo video](http://i1.hdslb.com/bfs/archive/2dd27bb2b3679eea0e578bfd7d359d4381a2e77e.jpg)](https://www.bilibili.com/video/BV1Bee16jEHN/)
 
----
-
-## What it does
+## Features
 
 | Feature | Notes |
 |---|---|
-| Same video on **all monitors**, frame-synced | one `mpv` process, one decode, N screens |
-| **Cover** fill on each monitor (default) | each screen gets its own centered crop; `contain` and `stretch` also available |
-| Mixed resolutions and **fractional scaling** | verified with two 4K panels at 150 % |
-| Sharpness is set by your **best** monitor | the compositor caps the renderer's surface at the monitor's work area, so it is pinned to the display with the largest physical work area (preferring secondary displays on resolution ties to avoid topbar/dock insets) — a 1080p laptop panel or system docks never limit an attached 4K screen |
-| **Hot-plug** — dock / undock, 1 or 3 externals | playback never restarts; layers follow the monitors |
-| Lives in GNOME's **background layer** | unaffected by *show desktop*, workspace switches, Alt+Tab, the dock; the video also appears in the overview's workspace previews and workspace-switch animations |
-| Never steals input | right-click / drag-select on the desktop work normally |
-| **Hardware decoding** | VA-API (AMD / Intel), NVDEC (NVIDIA), Vulkan — whatever `mpv --hwdec=auto-safe` finds. 4K60 H.264 on an AMD 780M measured at ~7 % of one core for mpv, plus ~9 % for GNOME Shell compositing it onto two screens |
-| Remembered across logins | starts automatically at login |
-| **Seamless switching** | `set` swaps the file inside the running renderer, so changing wallpaper never flashes the static background |
-| Stops while the screen is locked, resumes on unlock | saves power; the lock screen keeps its normal background |
-| **Auto-pause** | decoding stops while every monitor is hidden behind windows, while a fullscreen app is on top (game, video), or — opt-in — on battery; resumes the moment the wallpaper is visible again. Rules switchable with `autopause` |
-| **Keep-awake** toggle (`awake on`) | while the wallpaper plays: no automatic suspend, no idle screen blanking / locking. Off by default; released automatically on `exit`, lock, uninstall |
-| Renderer crash recovery | mpv is restarted automatically (with back-off) |
-| **Survives suspend / resume** | paused before the machine sleeps; after waking, playback is checked and the renderer restarted if the GPU reset left it frozen |
-| Any format mpv/FFmpeg can play | mp4, mkv, webm, mov, gif, … |
-| No audio, ever | wallpapers are silent by design |
+| Same video on **all monitors**, frame-synced | one `mpv` process, one decode |
+| **Cover** fill per monitor (default) | centered crop per screen; `contain` and `stretch` available |
+| Mixed resolutions, **fractional scaling** | verified on two 4K panels at 150 % |
+| Sharpness set by your **best** monitor | renderer pinned to the monitor with the largest work area, so a small panel, top bar or dock never limits a 4K screen |
+| **Hot-plug** | dock / undock, 1–3 externals; playback never restarts |
+| Lives in GNOME's **background layer** | unaffected by *show desktop*, workspaces, Alt+Tab, the dock; also shown in overview and app-grid previews |
+| Never steals input | desktop right-click / drag-select work normally |
+| **Hardware decoding** | whatever `mpv --hwdec=auto-safe` finds (VA-API, NVDEC, Vulkan). 4K60 H.264 on an AMD 780M: ~7 % of a core for mpv + ~9 % for GNOME Shell |
+| **Seamless switching** | `set` swaps the file inside the running renderer, no flash |
+| **Auto-pause** | when every monitor is covered, a fullscreen app is on top, or (opt-in) on battery |
+| **Keep-awake** (`awake on`) | no auto-suspend or idle blanking while playing; off by default, released on `exit`, lock and uninstall |
+| Resilient | remembered across logins; stops on lock; paused across suspend and restarted if the GPU reset froze it; crashed renderer respawned with back-off |
+| Any format mpv plays, no audio | mp4, mkv, webm, mov, gif, … |
 
-## What it does not do
-
-- **X11 sessions** — Wayland only.
-- **GNOME versions other than 50** — it relies on shell internals that change between releases (`install.sh` checks and refuses; `--force` to try anyway).
-- **Different videos per monitor** — one video everywhere is the design.
-- **Lock screen / login screen** wallpaper.
-- **Playlists, schedules, network sources** (YouTube etc.) — a single local file.
-- **GUI / preferences panel** — CLI only.
-- The overview's rounded workspace corners are not applied to the video (square corners on the video, rounded on the static wallpaper beneath it).
-
----
+**Not supported:** X11 · GNOME other than 50 (`install.sh --force` to try) · different videos per monitor · lock/login screen · playlists, schedules, network sources · GUI. The overview's rounded workspace corners are not applied to the video.
 
 ## Requirements
 
-Install these **before** running the installer:
-
 | Requirement | Check | Ubuntu package |
 |---|---|---|
-| GNOME Shell **50.x** | `gnome-shell --version` | (Ubuntu 26.04 default) |
-| **Wayland** session | `echo $XDG_SESSION_TYPE` → `wayland` | choose *Ubuntu* (not *Ubuntu on Xorg*) at the login screen |
+| GNOME Shell **50.x**, **Wayland** session | `gnome-shell --version`, `echo $XDG_SESSION_TYPE` | Ubuntu 26.04 default (pick *Ubuntu*, not *on Xorg*) |
 | `mpv` ≥ 0.38 | `mpv --version` | `mpv` |
 | `glib-compile-schemas` | `which glib-compile-schemas` | `libglib2.0-bin` |
-| `gnome-extensions` CLI | `which gnome-extensions` | `gnome-shell` (already present) |
-| `python3` | `python3 --version` | `python3` (already present) |
-| `git` | | `git` |
+| `git`, `python3`, `gnome-extensions` | | `git` (others preinstalled) |
 
 ```bash
 sudo apt install mpv libglib2.0-bin git
 ```
 
-For hardware decoding (strongly recommended — software-decoding 4K burns a CPU core):
+Hardware decoding is strongly recommended (software-decoding 4K burns a core): `mesa-va-drivers` for AMD / Intel (default on Ubuntu), proprietary driver ≥ 535 for NVIDIA. Check with `mpv --hwdec=auto-safe --msg-level=vd=v FILE` → `Using hardware decoding`.
 
-| GPU | Package |
-|---|---|
-| AMD / Intel | `mesa-va-drivers` (installed by default on Ubuntu) |
-| NVIDIA | proprietary driver ≥ 535 (`nvidia-driver-*`), which ships NVDEC |
-
-Check with `mpv --hwdec=auto-safe --msg-level=vd=v FILE` and look for `Using hardware decoding`.
-
-Only needed for **development / running the test harness**: `ffmpeg`, `gjs`, `bc`.
+Development only: `ffmpeg`, `gjs`, `bc`.
 
 ## Install
 
 ```bash
 git clone https://github.com/wallace921029/neo-wallpaper-live.git
 cd neo-wallpaper-live
-./install.sh
+./install.sh                 # or: ./install.sh --video ~/Videos/ocean.mp4
 ```
 
-The installer is user-local (no `sudo`). It copies the extension to `~/.local/share/gnome-shell/extensions/`, compiles the settings schema, installs the CLI to `~/.local/bin/neowallpaperlive`, and enables the extension.
+User-local, no `sudo`: extension to `~/.local/share/gnome-shell/extensions/`, CLI to `~/.local/bin/neowallpaperlive`.
 
-**GNOME Shell on Wayland only loads new extension code at login** — after the first install (and after every update) log out and back in. Then:
-
-```bash
-neowallpaperlive set ~/Videos/ocean.mp4
-neowallpaperlive status
-```
-
-Install and start in one go: `./install.sh --video ~/Videos/ocean.mp4`.
-
-**Update:** `git pull && ./install.sh`, then log out and back in.
+**Log out and back in after every install or update** — GNOME Shell on Wayland only loads extension code at login. Update with `git pull && ./install.sh`.
 
 ## Usage
 
@@ -107,96 +70,73 @@ Install and start in one go: `./install.sh --video ~/Videos/ocean.mp4`.
 neowallpaperlive set FILE          play FILE on every monitor (remembered across logins)
 neowallpaperlive exit              stop; the static wallpaper shows again
 neowallpaperlive start             resume the remembered file
-neowallpaperlive status            settings + live state (monitors, renderer pid, …)
+neowallpaperlive status            settings + live state
 neowallpaperlive fill MODE         cover (default) | contain | stretch
-neowallpaperlive awake on|off      keep the computer awake while the wallpaper plays (default off)
-neowallpaperlive autopause         show auto-pause rules and whether the video is paused right now
-neowallpaperlive autopause RULE on|off   RULE = covered (default on) | fullscreen (default on) | battery (default off)
-neowallpaperlive mpv-args [ARG…]   extra mpv flags for troubleshooting; no args clears them
+neowallpaperlive awake on|off      keep the computer awake while playing (default off)
+neowallpaperlive autopause [RULE on|off]   RULE = covered (on) | fullscreen (on) | battery (off)
+neowallpaperlive mpv-args [ARG…]   extra mpv flags; no args clears them
 neowallpaperlive log               follow the extension's log
-neowallpaperlive uninstall         remove the extension, CLI, desktop entry and settings
+neowallpaperlive uninstall         remove everything, reset settings (log out to fully unload)
 ```
 
-Tips
-- Pick a video at least as large as your biggest monitor; a 4K source stays sharp on a 4K panel, 1080p gets upscaled there.
-- A short, seamlessly looping clip (10–60 s) looks best.
-- `neowallpaperlive fill contain` if you would rather see black bars than a crop.
-- Auto-pause keeps the last frame on screen and only stops decoding, so there is nothing to notice except lower CPU/GPU use. On a laptop consider `neowallpaperlive autopause battery on`.
-- `neowallpaperlive awake on` for a presentation-style always-on screen. It only inhibits while a video is actually playing (`exit` releases it), uses gnome-session's standard inhibitor (the same one video players use), and is remembered across logins. `status` shows whether it is currently active.
-
-## Uninstall
-
-```bash
-neowallpaperlive uninstall
-```
-
-Removes everything the installer put in place and resets the settings. Log out and back in to fully unload the extension.
+Tips: use a video at least as large as your biggest monitor, ideally a 10–60 s seamless loop. Auto-pause keeps the last frame and only stops decoding; on a laptop consider `autopause battery on`.
 
 ## Troubleshooting
 
 | Symptom | What to do |
 |---|---|
-| `neowallpaperlive set` says *log out and back in* | Expected after install/update — Wayland cannot reload extension code. |
-| Static wallpaper, `status` shows `playing: false` | `neowallpaperlive log` — mpv's error is relayed there. Test the file directly: `mpv FILE`. |
-| High CPU | Hardware decoding is not active: `neowallpaperlive status` → `mpv.hwdec-current` shows the decoder in use (`vaapi`, `nvdec`, `vulkan`…) or `no` for software decoding. Install the VA-API / NVIDIA packages above. |
-| Green / garbled frames | Try `neowallpaperlive mpv-args --vo=gpu-next`, or `--hwdec=no` to rule out the decoder. |
-| `awake on` but the screen still blanks / the machine sleeps | `neowallpaperlive status` → `keepAwake.active` must be `true` while playing. If `error` is set, gnome-session is not running (non-GNOME session). Check other inhibitors with `gnome-session-inhibit --list`. |
-| Video missing on one monitor after plugging it in | `neowallpaperlive status` should list it under `monitors` with `layers` ≥ monitor count; if not, `neowallpaperlive exit && neowallpaperlive start`. |
-| Black or torn strips along the edge of a secondary monitor | Log out and back in after updating. GNOME Shell only loads new extension code on login; the work-area pinning fix requires a session reload to take effect. |
+| `set` says *log out and back in* | expected after install/update |
+| Static wallpaper, `status` → `playing: false` | `neowallpaperlive log` relays mpv's error; test with `mpv FILE` |
+| High CPU | `status` → `mpv.hwdec-current` is `no`: install the decoding packages above |
+| Green / garbled frames | `mpv-args --vo=gpu-next`, or `--hwdec=no` to rule out the decoder |
+| `awake on` but the screen still blanks | `status` → `keepAwake.active` must be `true` while playing (`error` set means no gnome-session); check `gnome-session-inhibit --list` |
+| Video missing on a newly plugged monitor | `status` → `layers` ≥ monitor count; otherwise `exit && start` |
+| Wallpaper strip along the right/bottom edge, or app grid shows a video band instead of desktop previews | fixed — update and log in again. If it persists, send `status`: every `layerBoxes` entry with `mapped: true` needs a `clone` box covering its `layer` box |
 
 Logs: `journalctl --user -f _COMM=gnome-shell | grep NeoWallpaperLive`.
-
----
 
 ## How it works
 
 ```
-mpv (hidden, minimized, hardware decoded, native video size)
+mpv (hidden, minimized, hardware decoded)
   └─ window actor
        ├─ Clutter.Clone → Meta.BackgroundActor of monitor 0  (cover-scaled)
        ├─ Clutter.Clone → Meta.BackgroundActor of monitor 1
-       └─ Clutter.Clone → …
+       └─ …
 ```
 
-The renderer window is kept on the monitor with the largest physical work area (`workArea.width × workArea.height × scale²`), preferring a secondary display on resolution ties to avoid panel/dock insets, and re-pinned whenever monitors change: Mutter caps a Wayland surface at the work area of the output it sits on, so placing it on a smaller screen (or an inset primary display) would truncate or downscale what other monitors see. `neowallpaperlive status` reports `rendererMonitor` and `rendererBuffer`.
+The extension wraps `BackgroundManager._createBackgroundActor`, so every background actor GNOME creates — desktop, workspace-switch animations, overview previews — gets a `Clutter.Clone` of the renderer. Clutter keeps an actor mapped while it has mapped clones, so the minimized mpv window keeps receiving frame callbacks. Thin, reversible patches hide the renderer from Alt+Tab, the overview, the dock and window animations.
 
-The extension wraps `BackgroundManager._createBackgroundActor`, so every background actor GNOME creates — the main desktop layer, the sliding copies in workspace-switch animations, the scaled copies in the overview — receives a `Clutter.Clone` of the renderer's window actor. Clutter keeps an actor mapped while it has mapped clones, so Mutter keeps sending frame callbacks to the minimized mpv window and it keeps rendering. A few thin, reversible patches hide the renderer window from Alt+Tab, the overview, workspace thumbnails, the dock and window animations.
+Mutter caps a window at its monitor's work area, so the renderer is pinned to the monitor with the largest one (`width × height × scale²`, secondary preferred on ties) and re-pinned when monitors change. `status` reports `rendererMonitor`, `rendererBuffer`, `rendererRects`, each monitor's `workArea`, and `layerBoxes` (what Clutter allocated to each layer and clone).
 
 ```
 extension/neowallpaperlive@local/
-  extension.js          lifecycle + GSettings → renderer/layer sync
-  modules/renderer.js   mpv process, window adoption, hiding, crash respawn
-  modules/wallpaper.js  clones into background actors, fill-mode layout
-  modules/fit.js        fill-mode geometry, pure and unit-tested
-  modules/stealth.js    hide the renderer from window lists / dock / animations
+  extension.js          lifecycle, GSettings → renderer/layers
+  modules/renderer.js   mpv process, window adoption, pinning, respawn
+  modules/wallpaper.js  clones into background actors
+  modules/fit.js        fill-mode geometry (pure, unit-tested)
+  modules/stealth.js    hide the renderer from window lists / dock
   modules/control.js    D-Bus status (+ test hooks when NWL_TEST=1)
-  schemas/              GSettings schema
 bin/neowallpaperlive    CLI
-install.sh              user-local installer
+install.sh              installer
 data/                   hidden .desktop entry for the renderer's app-id
 tools/                  headless test harness
 ```
 
 ## Development
 
-`tools/headless-test.sh` starts a **separate, headless GNOME Shell** with two virtual monitors (1920×1080 and 1280×1024), installs the extension into isolated XDG directories, configures it through the real CLI, then drives it (workspace switch, background rebuild, overview, `fill`, `exit`/`start`) while sampling mpv's playback position, the extension's D-Bus status and stage screenshots. Your real session is never touched.
+The harness runs a **separate headless GNOME Shell** with two virtual monitors (1920×1080, 1280×1024) and isolated XDG dirs, configures it through the real CLI, and samples mpv's position, the D-Bus status and screenshots. Your session is never touched.
 
 ```bash
-tools/regression.sh             # every scenario + assertions, ~10 min
-tools/regression.sh smoke sleep # just these two
-
-tools/headless-test.sh smoke    # a single scenario, prints the raw table
+tools/regression.sh             # all scenarios + assertions, ~15 min
+tools/regression.sh smoke sleep # selected scenarios
+tools/headless-test.sh smoke    # one scenario, raw table
+gjs -m tools/fit-test.js        # fill-maths unit tests, no compositor needed
 ```
 
-Scenarios: `smoke` (playback, stealth, workspaces, overview, fill modes, exit/start), `soak` (continuous playback), `autopause` (windows covering monitors, fullscreen), `pin` (renderer stays on the monitor with the largest work area), `sleep` (suspend/resume, hung renderer), `switch` (changing the file in place), `geom` (a dock-sized strut insets the renderer on both axes). `tools/regression.sh` runs them all and prints one PASS/FAIL line per invariant.
+Scenarios: `smoke` (playback, stealth, workspaces, overview, fill modes, exit/start), `soak`, `autopause`, `pin`, `sleep` (suspend/resume, hung renderer), `switch` (in-place file change), `geom` (dock-sized strut insets the renderer), `appgrid` (previews keep their size with the video on). Unit tests cover what virtual monitors can't produce: fractional scaling and client-side shadows.
 
-The fill-mode geometry also has unit tests that need no compositor, for the inputs a virtual monitor cannot produce — fractional scaling, and a client drawing its own shadows:
-
-```bash
-gjs -m tools/fit-test.js
-```
-
-Reading the raw table: `mpv-pos` keeps advancing, `drop` stays 0, `playing=True layers=2 minim=True`, screenshot diffs stay non-zero, the `stealth` step reports `actors: 0, tab: 0, running: []`, and no JS errors.
+Raw table: `mpv-pos` advances, `drop` stays 0, `playing` is `True`, `layers` is 2 (more with the overview open), `ipc` is `<decoder>/<extension's pause>/<mpv's pause>` with both flags agreeing. Each sample's full `status` is saved as JSON beside its screenshot.
 
 ## Acknowledgements
 
