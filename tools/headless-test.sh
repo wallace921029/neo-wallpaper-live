@@ -44,11 +44,17 @@ cp -r "$REPO/extension/$UUID" "$EXT_DIR"
 glib-compile-schemas "$EXT_DIR/schemas"
 mkdir -p "$XDG_DATA_HOME/applications"; cp "$REPO/data/neowallpaperlive-renderer.desktop" "$XDG_DATA_HOME/applications/"
 
-gsettings set org.gnome.shell enabled-extensions "['$UUID']"
+ENABLED="['$UUID']"
+# The glass scenario needs the real Ubuntu Dock next to us.
+[[ "$SCENARIO" == "glass" ]] && ENABLED="['$UUID', 'ubuntu-dock@ubuntu.com']"
+gsettings set org.gnome.shell enabled-extensions "$ENABLED"
 gsettings set org.gnome.shell disabled-extensions "[]"
 gsettings set org.gnome.shell disable-user-extensions false
 gsettings set org.gnome.desktop.session idle-delay 0
 gsettings --schemadir "$EXT_DIR/schemas" reset-recursively "$SCHEMA"
+# The dock's settings live in the harness's keyfile between runs; glass changes
+# and restores them, so every glass run must start from the dock's defaults.
+[[ "$SCENARIO" == "glass" ]] && gsettings reset-recursively org.gnome.shell.extensions.dash-to-dock
 # Configure through the real CLI, exactly as a user would.
 "$REPO/bin/neowallpaperlive" set "$VIDEO" >/dev/null
 
@@ -115,6 +121,44 @@ case "$SCENARIO" in
              STEPS=(s1 "ov-show:Main.overview.show(); 'ok'" "to-grid:$AG" "ag-on:$WSW"
                     "video-off!neowallpaperlive exit" "ag-off:$WSW"
                     "video-on!neowallpaperlive start" "ag-on2:$WSW" "ov-hide:Main.overview.hide(); 'ok'") ;;
+    # Frosted glass: the top bar and the Ubuntu Dock get a Shell.BlurEffect and
+    # a translucent tint. "g" reports, per target, whether the effect is
+    # attached and enabled; "dock" shows the dock's own transparency settings,
+    # which glass must set while on and restore exactly when off.
+    glass) GINFO="const bg=a=>{const s=[a];while(s.length){const x=s.pop(); if(x.name==='dashtodockBox') return x; s.push(...x.get_children());} return null;}; JSON.stringify([Main.layoutManager.panelBox, ...Main.layoutManager.uiGroup.get_children().filter(a=>a.name==='dashtodockContainer').map(bg)].filter(Boolean).map(a=>{const e=a.get_effect('nwl-glass'); return [a.name||a.style_class, e?e.enabled:null, e?e.radius:null, e?e.brightness:null, a===Main.layoutManager.panelBox ? 'cls='+Main.panel.has_style_class_name('nwl-glass')+' alpha='+Main.panel.get_theme_node().get_background_color().alpha : (a.get_style()||'').slice(0,34)]})).concat(' docks='+Main.layoutManager.uiGroup.get_children().filter(a=>a.name==='dashtodockContainer').length)"
+           DOCKS="const g=new Gio.Settings({schema_id:'org.gnome.shell.extensions.dash-to-dock'}); g.get_string('transparency-mode')+' '+g.get_double('background-opacity').toFixed(2)"
+           GRID="Main.overview._overview._controls._stateAdjustment.value = 2; 'app grid'"
+           # White bars with gaps, laid under the top bar (x 0-480) and under the
+           # dock (y 320-930). A real blur flattens them; a bar that merely
+           # became translucent keeps them sharp, which is how "tinted but not
+           # blurred" gets caught.
+           STRIPES="const G=Main.layoutManager.uiGroup; const St=G.constructor; const dock=G.get_children().find(a=>a.name==='dashtodockContainer' && a.get_n_children()>0); const pb=Main.layoutManager.panelBox; const mk=(x,y,w,h,below)=>{const a=new St({x,y,width:w,height:h,style:'background-color:#ffffff;'}); G.add_child(a); G.set_child_below_sibling(a, below); return a;}; for(let i=0;i<30;i++) mk(i*16,0,8,40,pb); for(let i=0;i<38;i++) mk(0,320+i*16,70,8,dock); 'stripes under bar and dock'"
+           DOCKS="const g=new Gio.Settings({schema_id:'org.gnome.shell.extensions.dash-to-dock'}); g.get_string('transparency-mode')+' '+g.get_double('background-opacity').toFixed(2)"
+           GRID="Main.overview._overview._controls._stateAdjustment.value = 2; 'app grid'"
+           # White bars with gaps, laid under the top bar (x 0-480) and under the
+           # dock (y 320-930). A real blur flattens them; a bar that merely
+           # became translucent keeps them sharp, which is how "tinted but not
+           # blurred" gets caught.
+           STRIPES="const G=Main.layoutManager.uiGroup; const St=G.constructor; const dock=G.get_children().find(a=>a.name==='dashtodockContainer' && a.get_n_children()>0); const pb=Main.layoutManager.panelBox; const mk=(x,y,w,h,below)=>{const a=new St({x,y,width:w,height:h,style:'background-color:#ffffff;'}); G.add_child(a); G.set_child_below_sibling(a, below); return a;}; for(let i=0;i<30;i++) mk(i*16,0,8,40,pb); for(let i=0;i<38;i++) mk(0,320+i*16,70,8,dock); 'stripes under bar and dock'"
+           TREE="const out=[]; const walk=(a,d)=>{ out.push('  '.repeat(d)+a.constructor.name+' name='+a.name+' cls='+(a.style_class??'')+' '+Math.round(a.width)+'x'+Math.round(a.height)+' hasfn='+(typeof a.has_style_class_name)); a.get_children().forEach(c=>walk(c,d+1)); }; Main.layoutManager.uiGroup.get_children().filter(a=>a.name==='dashtodockContainer').forEach(a=>walk(a,0)); GLib.file_set_contents('/tmp/claude-1000/-home-uzhi-gh-repositories-neo-wallpaper-live/375efdb6-2fc2-4e67-af16-8880db5cff34/scratchpad/tree.txt', out.join(' ## ')); 'tree '+out.length"
+           # Detail left in the stripes (std-dev of the green channel) inside the
+           # top bar and inside the dock, measured on the latest screenshot.
+           MEASURE="echo panel=\$(gjs -m $T/contrast.js \$(ls -t $OUT/*.png | head -1) 100 6 280 20) dock=\$(gjs -m $T/contrast.js \$(ls -t $OUT/*.png | head -1) 6 400 54 460)"
+           # Is Mutter still clipping its redraws? (Clutter draw flag 2 = off.)
+           FLAGS="const [,w]=imports.gi.Clutter.get_debug_flags(); 'draw='+w"
+           STEPS=(base "f-base:$FLAGS" "stripes:$STRIPES" "dock:$DOCKS" "g0:$GINFO" off0 "m-off!$MEASURE"
+                  "glass-on!neowallpaperlive glass on" on1 "g1:$GINFO" "dock-on:$DOCKS" "m-on!$MEASURE" "f-on:$FLAGS"
+                  "redraw-clipped!neowallpaperlive glass redraw clipped" "f-clipped:$FLAGS"
+                  "redraw-full!neowallpaperlive glass redraw full" "f-full:$FLAGS"
+                  "blur0!neowallpaperlive glass blur 0" blur0 "m-b0!$MEASURE"
+                  "blur40!neowallpaperlive glass blur 40" blur40 "m-b40!$MEASURE"
+                  "tune!neowallpaperlive glass opacity 0.15" tuned "g2:$GINFO"
+                  "ov-show:Main.overview.show(); 'ok'" ov "g3:$GINFO"
+                  "to-grid:$GRID" grid
+                  "ov-hide:Main.overview.hide(); 'ok'" back "g4:$GINFO"
+                  "ext-off!gnome-extensions disable $UUID" "dock-ext-off!gsettings get org.gnome.shell.extensions.dash-to-dock transparency-mode"
+                  "ext-on!gnome-extensions enable $UUID" w1 w2 "g6:$GINFO" "dock-ext-on:$DOCKS" "f-ext:$FLAGS"
+                  "glass-off!neowallpaperlive glass off" off "g5:$GINFO" "dock-off:$DOCKS" "f-off:$FLAGS") ;;
     *) echo "unknown scenario: $SCENARIO"; exit 2 ;;
 esac
 printf '%s\n' "${STEPS[@]}" > "$T/steps.txt"

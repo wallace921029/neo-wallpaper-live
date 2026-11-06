@@ -53,6 +53,28 @@
   harness 新增 `appgrid` 场景：在应用抽屉里开关视频做 A/B，断言开视频时预览宽度与关视频时一致、背景首选宽度为 0。已验证旧代码 FAIL（`w=1280,1280,1280 bg=1280`）、新代码 PASS（`w=288,288,1025 bg=0`）。
   附带：`status.layerBoxes` 增加 `mapped`；概览打开期间桌面层被隐藏、Clutter 不给它布局，clone 框是"从未分配"的无穷值（旧代码同样如此，无可见影响），覆盖断言改为只判断屏幕上可见的层，但可见层里出现未分配的 clone 仍算失败。
 
+- [x] **T18 · 顶栏和左侧 Dock 磨砂半透明**（2026-11-06，用户需求；不依赖 Blur my Shell）
+  `modules/glass.js` + `neowallpaperlive glass on|off|blur N|opacity X|brightness X`（默认关）。用 GNOME 自带的 `Shell.BlurEffect`（`BACKGROUND` 模式：模糊身后已经画好的内容，含我们的视频 clone 和路过的窗口）加半透明着色，只挂特效、不碰任何布局。
+  **实测发现（决定了挂载位置）**：同一个特效，挂在 `Main.panel` 上完全不生效，挂在外层容器 `panelBox` 上才生效；Dock 同理——挂在 `.dash-background` 或 `dash` 上不生效，挂在 `dashtodockBox`（再外一层）才生效。靠"铺白条纹、量剩余对比度"测出（半径 0 → 40：顶栏 72 → 19.7，Dock 75 → 0.5；顶栏剩余的是背后红绿色带本身的渐变，肉眼确认条纹已完全消失）。
+  **着色走哪一层**：顶栏用生成的小样式表（`#panel.nwl-glass`，概览/锁屏下回到透明）——概览每次开合都会重写 `Main.panel.style`，内联样式活不下来。Dock 的背景样式归它自己的主题管理器，每次变动都会重写，所以改走它自己的 GSettings（`transparency-mode=FIXED` + `background-opacity`），原值存进 `glass-dock-backup`，关闭、禁用扩展（含锁屏）时精确还原；上次异常退出留下的备份不会被覆盖。
+  **应用抽屉**：这是 Blur my Shell 在 Ubuntu 26.04 上"所有应用消失"的触发点（它为模糊 Dock 强行提前计算布局，Ubuntu 打过补丁的 Shell 会把空网格算成每页 0 个图标，上游 #1159，修复 #1168）。我们从不读 allocation，应用抽屉在磨砂开着时图标和小桌面预览都完整（截图确认）。
+  Dock 主题管理器会在 uiGroup 里短暂放同名的空 `dummy` 容器，按名字找 Dock 会撞上它们——空闲时再查一次，并只对仍在舞台上的容器报警。
+  harness 新增 `glass` 场景（带真实 Ubuntu Dock）：24 条断言，含"半径 0 对照 / 半径 40 抹平"、概览让位、禁用再启用、关闭后 Dock 设置与原来完全一致。
+  **局限**：①只在无头虚拟显示器验证，真机 GPU 上每帧对 4K60 视频做模糊的开销未测；②只测了默认的"满高、靠左"Ubuntu Dock，悬浮式（`extend-height` 关）下模糊区域是 Dock 外围的矩形，圆角处会露出模糊的边；③`hwdec-current` 在本机无头环境里是 `no`（写磨砂代码之前就是），回归里"硬解"那条在这台机器上会失败，与磨砂无关；④应用自己的标题栏不在范围内。
+
+- [x] **T19 · `install.sh` 按"全新电脑"自动装依赖，含硬解驱动**（2026-11-06，用户实机发现软解）
+  实机现象：Intel Arc（Meteor Lake）机器上视频走 CPU 软解（`hwdec-current: no`，mpv 约 97% CPU）。根因：没装 VA-API 驱动 `intel-media-va-driver`（也没有 `vainfo`）。README 原来写"AMD / Intel 用 `mesa-va-drivers`（Ubuntu 默认已装）"——对 Intel 是错的（Intel 靠独立的 intel-media-driver），对 26.04 的 AMD 也过时（`mesa-va-drivers` 已无候选，Mesa 的 VA-API 在 `libgl1-mesa-dri` 里）。已改正。
+  新增 `install-deps.sh`（被 install.sh 引用）：**按全新 Ubuntu 桌面规划，而不是按当前这台机器缺什么**——读 `/sys/class/drm/card*/device/vendor` 识别显卡厂商（双显卡各算一次），算出完整清单（所有机器 `mpv`/`libglib2.0-bin`/`python3`；Intel `intel-media-va-driver`；AMD 现查 `mesa-va-drivers` 是否存在，否则 `libgl1-mesa-dri`；Intel/AMD 加 `vainfo`；`--dev` 加 `ffmpeg`/`gjs`/`bc`），再逐个 `dpkg-query` 检查，只装缺的。NVIDIA 驱动不代装（内核模块、Secure Boot 要设密码），只给 `sudo ubuntu-drivers install` 的提示；虚拟机等识别不了的显卡如实说明会走 CPU。装完用 `vainfo` 确认 H.264 可解，失败只警告不中断。
+  **不静默提权**：终端里先列清单再问 `[Y/n]`；`--yes` 免问；`--no-deps` 跳过；没有终端又没 `--yes` 时只打印命令。无 apt 的系统打印包清单交给用户。
+  `tools/install-test.sh`：23 条，用伪造的 `/sys/class/drm`、dpkg 数据库和记录用的 sudo/apt-get/vainfo 描述机器——全新 Intel、`--yes`、vainfo 失败、AMD 两种包布局、AMD 已装、NVIDIA 有/无驱动、Intel+NVIDIA、双 Intel 卡去重、虚拟机、读不到显卡、已装齐、部分已装、`--dev`、apt 失败、无 apt，以及用真实伪终端测"回答 n"和"直接回车"。故意改坏 3 处，5 条检查随即失败，证明测试有效。
+  **局限**：①端到端的真实 `sudo apt-get` 没在我这里跑过（需要密码），装包路径靠桩测试覆盖；②`intel-media-va-driver` 只覆盖 Broadwell 及更新的 Intel，更老的要 `i965-va-driver`，脚本未处理；③Intel/AMD 之外的显卡（含 NVIDIA）装完后是否真走硬解，仍要看 `status` 的 `hwdec-current`。
+
+- [~] **T20 · 磨砂开着时悬停出现闪烁的深色方块**（2026-11-06，用户实机报告：Ghostty 最大化时悬停顶栏或 dock 会闪方块，Chrome 最大化不会）
+  **假设（用户尚未确认）**：`BACKGROUND` 模糊读的是"身后已画好的像素"。Mutter 默认只重画变化的小矩形（悬停高亮），矩形之外的缓冲区里还是上一帧——对顶栏和 dock 而言，那已经是模糊加着色后的结果。模糊读到自己的旧输出，等于叠了两层着色，深色方块随两块缓冲区交替而闪。上游 Blur my Shell 的 README 描述过同类"黑色矩形"问题，它的 "Artifact handling" 里最强的一档就是关闭局部重绘。**没能在本地复现**：无头截图走的是整屏重画，看不到上屏帧里的残留。**也没解释**为什么 Chrome 最大化不出现而 Ghostty 出现。
+  **做法**：磨砂开着时调用 `Clutter.add_debug_flags(0, DISABLE_CLIPPED_REDRAWS, 0)`，每次变化整屏重画；关闭、禁用扩展时精确还原，且只在标志原本没被别人设置时才动它。设置项 `glass-full-redraw`（默认开），`neowallpaperlive glass redraw full|clipped` 可退回。视频播放时壁纸本来就每帧整屏损坏，所以主要多出来的是"视频暂停（被窗口盖住）时悬停那一下"的整屏重画。
+  harness 的 `glass` 场景用 `Clutter.get_debug_flags()` 读出标志：关闭时 0、开启 2、`redraw clipped` 回 0、`redraw full` 再 2、禁用再启用后 2、`glass off` 回 0，6 条断言。
+  **待办**：①用户先在 Looking Glass 里手动打开该标志（`imports.gi.Clutter.add_debug_flags(null, imports.gi.Clutter.DrawDebugFlag.DISABLE_CLIPPED_REDRAWS, null)`）确认方块消失，再装新版；②确认后测整屏重画的 GPU 开销；③若方块没消失，说明假设不对，回到"读到的到底是什么"重新查（比如给顶栏和 dock 的模糊换成对模糊目标整体重绘，而不是全局禁用）。
+
 ## 第二梯队 / Tier 2 — 健壮性
 
 - [ ] **T6 · 猴子补丁存在性保护**

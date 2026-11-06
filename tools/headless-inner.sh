@@ -26,8 +26,8 @@ printf "%-6s %-12s %-8s %-5s %-7s %-6s %-8s %-14s %-20s %-8s %-8s  %s\n" t step 
 prev=""; n=0; fail=0
 for step in "${STEPS[@]}"; do
     label=$step; note=""
-    if [[ "$step" == *:* ]]; then label=${step%%:*}; note=$(ev "${step#*:}" | tr -d '\n' | cut -c1-70)
-    elif [[ "$step" == *!* ]]; then label=${step%%!*}; note=$(bash -c "${step#*!}" 2>&1 | tr '\n' ' ' | cut -c1-70); fi
+    if [[ "$step" == *:* ]]; then label=${step%%:*}; note=$(ev "${step#*:}" | tr -d '\n' | cut -c1-200)
+    elif [[ "$step" == *!* ]]; then label=${step%%!*}; note=$(bash -c "${step#*!}" 2>&1 | tr '\n' ' ' | cut -c1-200); fi
     sleep "$SAMPLE"
     n=$((n+1)); tag=$(printf "%02d-%s" $n "$label")
     gdbus call $D --method "$BUS.Screenshot" "$OUT/$tag.png" >/dev/null 2>&1

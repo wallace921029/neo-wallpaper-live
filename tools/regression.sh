@@ -11,7 +11,7 @@ set -uo pipefail
 T="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTDIR="$T/out/regression"
 SCENARIOS=("$@")
-[[ ${#SCENARIOS[@]} -eq 0 ]] && SCENARIOS=(smoke soak autopause pin sleep switch geom appgrid)
+[[ ${#SCENARIOS[@]} -eq 0 ]] && SCENARIOS=(smoke soak autopause pin sleep switch geom appgrid glass)
 
 rm -rf "$OUTDIR"; mkdir -p "$OUTDIR"
 
@@ -116,10 +116,17 @@ for sc in scenarios:
     log = os.path.join(outdir, f"{sc}.log")
     bad = []
     if os.path.exists(log):
+        # The glass scenario also runs the real Ubuntu Dock, which logs its own
+        # "widget is not in the stage" criticals while it starts up. Those are
+        # not ours; what glass is answerable for is everything after it turns on.
+        started = sc != "glass"
         for line in open(log, errors="replace"):
-            if re.search(r"JS ERROR|CRITICAL", line) and not any(a in line for a in LOG_ALLOW):
+            if "[NeoWallpaperLive] glass on" in line:
+                started = True
+            if started and re.search(r"JS ERROR|CRITICAL", line) and not any(a in line for a in LOG_ALLOW):
                 bad.append(line.strip())
-    check(sc, "no JS errors or criticals", not bad, bad[0][:90] if bad else "")
+    check(sc, "no JS errors or criticals" + (" once glass is on" if sc == "glass" else ""),
+          not bad, bad[0][:90] if bad else "")
 
     playing = [x for x in r if x["playing"] == "True"]
     check(sc, "hardware decoding in use whenever playing",
@@ -204,6 +211,89 @@ for sc in scenarios:
             same = bool(ref and w and len(w) == len(ref) and all(abs(a - b) <= 2 for a, b in zip(w, ref)))
             check(sc, f"video leaves the app grid previews their size at '{step}'", same, f"{w} vs {ref}")
             check(sc, f"background asks for no size of its own at '{step}'", bg is not None and not any(bg), str(bg))
+
+    if sc == "glass":
+        def targets(step):
+            """(panel, dock, docks) from a GINFO sample: [name, effect on?, radius, brightness, style]."""
+            m = re.match(r"(\[.*\]) docks=(\d+)", by_step.get(step, {}).get("note", ""))
+            if not m:
+                return None, None, 0
+            items = {t[0]: t for t in json.loads(m.group(1))}
+            return items.get("panelBox"), items.get("dashtodockBox"), int(m.group(2))
+        def tint(panel):
+            m = re.search(r"cls=(\w+) alpha=(\d+)", panel[4]) if panel else None
+            return (m.group(1) == "true", int(m.group(2))) if m else (None, None)
+        def settings(step):
+            return by_step.get(step, {}).get("note", "").strip("' ")
+        def last_word(step):
+            """While the extension is off the status columns are empty and the
+            table does not split cleanly; the shell's answer is still the last word."""
+            for line in open(os.path.join(outdir, f"{sc}.txt")):
+                bits = line.split()
+                if len(bits) > 1 and bits[1] == step:
+                    return bits[-1].strip("'")
+            return ""
+        def detail(step):
+            m = re.search(r"panel=([\d.]+) dock=([\d.]+)", by_step.get(step, {}).get("note", ""))
+            return (float(m.group(1)), float(m.group(2))) if m else (None, None)
+
+        p0, d0, n0 = targets("g0")
+        check(sc, "nothing is attached while glass is off", p0 and d0 and p0[1] is None and d0[1] is None and n0 == 1,
+              f"{p0} {d0} docks={n0}")
+        check(sc, "the dock starts at its own defaults", settings("dock") == "DEFAULT 0.80", settings("dock"))
+
+        p1, d1, _ = targets("g1")
+        check(sc, "glass on: the top bar is blurred and tinted (0.35)",
+              bool(p1) and p1[1] is True and p1[2] == 40 and tint(p1) == (True, 89), f"{p1}")
+        check(sc, "glass on: the dock is blurred", bool(d1) and d1[1] is True and d1[2] == 40, f"{d1}")
+        check(sc, "glass on: the dock is set to fixed translucency", settings("dock-on") == "FIXED 0.35", settings("dock-on"))
+
+        # Detail left in a pattern of white bars laid under each: a blur flattens
+        # them, a bar that only turned translucent keeps them sharp.
+        (p_b0, d_b0), (p_b40, d_b40) = detail("m-b0"), detail("m-b40")
+        check(sc, "radius 0 leaves the bars visible through both (control)",
+              bool(p_b0 and d_b0) and p_b0 > 40 and d_b0 > 40, f"panel={p_b0} dock={d_b0}")
+        check(sc, "radius 40 flattens them under the top bar",
+              bool(p_b0 and p_b40 is not None) and p_b40 < 0.5 * p_b0, f"{p_b0} -> {p_b40}")
+        check(sc, "radius 40 flattens them under the dock",
+              bool(d_b0 and d_b40 is not None) and d_b40 < 0.2 * d_b0, f"{d_b0} -> {d_b40}")
+
+        p2, _, _ = targets("g2")
+        check(sc, "changing the opacity retints the top bar (0.15)", tint(p2) == (True, 38), f"{p2}")
+
+        p3, d3, _ = targets("g3")
+        check(sc, "overview: the top bar steps aside (no blur, clear)",
+              bool(p3) and p3[1] is False and tint(p3) == (True, 0), f"{p3}")
+        check(sc, "overview: the dock stays glass", bool(d3) and d3[1] is True, f"{d3}")
+        p4, _, _ = targets("g4")
+        check(sc, "leaving the overview brings the top bar glass back",
+              bool(p4) and p4[1] is True and tint(p4) == (True, 38), f"{p4}")
+
+        check(sc, "disabling the extension gives the dock its settings back",
+              last_word("dock-ext-off") == "DEFAULT", last_word("dock-ext-off"))
+        p6, d6, n6 = targets("g6")
+        check(sc, "re-enabling the extension re-applies glass",
+              bool(p6 and d6) and p6[1] is True and d6[1] is True and n6 == 1, f"{p6} {d6}")
+        check(sc, "re-applied dock tint follows the current opacity", settings("dock-ext-on") == "FIXED 0.15",
+              settings("dock-ext-on"))
+
+        def draw_flag(step):
+            m = re.search(r"draw=(\d+)", by_step.get(step, {}).get("note", ""))
+            return int(m.group(1)) if m else None
+        # Mutter's partial repaints make the blur read its own old output, so
+        # glass switches clipped redraws off (draw flag 2) and puts them back.
+        check(sc, "clipped redraws are untouched while glass is off", draw_flag("f-base") == 0, str(draw_flag("f-base")))
+        check(sc, "glass on: clipped redraws are switched off", draw_flag("f-on") == 2, str(draw_flag("f-on")))
+        check(sc, "glass redraw clipped: they come back", draw_flag("f-clipped") == 0, str(draw_flag("f-clipped")))
+        check(sc, "glass redraw full: they go off again", draw_flag("f-full") == 2, str(draw_flag("f-full")))
+        check(sc, "re-enabling the extension switches them off again", draw_flag("f-ext") == 2, str(draw_flag("f-ext")))
+        check(sc, "glass off: clipped redraws are restored", draw_flag("f-off") == 0, str(draw_flag("f-off")))
+
+        p5, d5, _ = targets("g5")
+        check(sc, "glass off: effects removed and the bar is solid again",
+              bool(p5 and d5) and p5[1] is None and d5[1] is None and tint(p5) == (False, 255), f"{p5} {d5}")
+        check(sc, "glass off: the dock is exactly as it was", settings("dock-off") == "DEFAULT 0.80", settings("dock-off"))
+        check(sc, "glass never warns", "glass:" not in open(log, errors="replace").read().replace("[NeoWallpaperLive] glass on", "").replace("[NeoWallpaperLive] glass off", "") if os.path.exists(log) else True)
 
     if sc == "switch":
         pids = {x["pid"] for x in r}

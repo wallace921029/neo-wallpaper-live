@@ -18,6 +18,7 @@ import {Control} from './modules/control.js';
 import {KeepAwake} from './modules/keepawake.js';
 import {AutoPause} from './modules/autopause.js';
 import {SleepWatch} from './modules/sleepwatch.js';
+import {Glass} from './modules/glass.js';
 import {sleep, withTimeout} from './modules/mpvipc.js';
 
 // Properties reported by `neowallpaperlive status`; hwdec-current answers
@@ -64,14 +65,19 @@ export default class NeoWallpaperLiveExtension extends Extension {
             onResume: () => this._onResume(),
         });
 
+        this._glass = new Glass(this._settings);
+
         this._stealth.enable();
         this._layer.enable();
         this._keepAwake.enable();
         this._autoPause.enable(); // after stealth: relies on the patched get_window_actors
         this._sleepWatch.enable();
         this._control.enable();
+        this._glass.enable();
 
         this._settingsIds = [
+            ...['glass', 'glass-radius', 'glass-opacity', 'glass-brightness', 'glass-full-redraw']
+                .map(key => this._settings.connect(`changed::${key}`, () => this._glass.refresh())),
             this._settings.connect('changed::video-path', () => this._sync()),
             this._settings.connect('changed::enabled', () => this._sync()),
             this._settings.connect('changed::fill-mode', () => this._layer.relayout()),
@@ -90,6 +96,7 @@ export default class NeoWallpaperLiveExtension extends Extension {
         this._settingsIds = [];
 
         this._resumeGeneration = (this._resumeGeneration ?? 0) + 1; // drop pending probes
+        this._glass?.disable();
         this._renderer?.stop();
         this._sleepWatch?.disable();
         this._autoPause?.disable();
@@ -99,6 +106,7 @@ export default class NeoWallpaperLiveExtension extends Extension {
         this._stealth?.disable();
 
         this._renderer = null;
+        this._glass = null;
         this._sleepWatch = null;
         this._autoPause = null;
         this._keepAwake = null;
@@ -243,6 +251,10 @@ export default class NeoWallpaperLiveExtension extends Extension {
                 requested: this._settings.get_boolean('keep-awake'),
                 active: this._keepAwake.active,
                 error: this._keepAwake.error,
+            },
+            glass: {
+                requested: this._settings.get_boolean('glass'),
+                ...this._glass.describe(),
             },
             autoPause: {
                 paused: this._autoPause.paused,

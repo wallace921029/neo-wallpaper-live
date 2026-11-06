@@ -39,6 +39,20 @@ Power saving
                           no screen blanking or locking — while the wallpaper
                           is playing                              (default off)
 
+Look
+  glass                   show the frosted-glass settings
+  glass on|off            frosted glass on the top bar and the left dock:
+                          blur what is behind them and tint them translucent
+                                                                  (default off)
+  glass blur N            blur radius, 0-200             (default 40)
+  glass opacity X         tint strength, 0 (clear) - 1 (solid)  (default 0.35)
+  glass brightness X      brightness of the blur, 0-1    (default 0.9)
+  glass redraw full|clipped
+                          full (default): repaint the whole screen on every
+                          change while glass is on, which stops dark squares
+                          flickering around hovered icons; clipped: cheaper on
+                          the GPU, but the squares can come back
+
 Diagnostics
   status                  settings plus live state: monitors, renderer pid,
                           decoder in use, playback position
@@ -57,6 +71,8 @@ Examples
   neowallpaperlive autopause battery on        # save power on a laptop
   neowallpaperlive fill contain                # letterbox instead of cropping
   neowallpaperlive awake on
+  neowallpaperlive glass on                    # frosted top bar and dock
+  neowallpaperlive glass opacity 0.2           # more see-through
   neowallpaperlive exit
 
 Every setting is remembered across logins. After installing or updating the
@@ -157,6 +173,47 @@ cmd_awake() {
     esac
 }
 
+cmd_glass() {
+    check_installed
+    if [[ $# -eq 0 ]]; then
+        echo "glass:      $(gs get "$SCHEMA" glass)"
+        echo "blur:       $(gs get "$SCHEMA" glass-radius)   (radius, 0-200)"
+        echo "opacity:    $(gs get "$SCHEMA" glass-opacity)   (tint over the blur, 0-1)"
+        echo "brightness: $(gs get "$SCHEMA" glass-brightness)   (0-1)"
+        echo "redraw:     $(gs get "$SCHEMA" glass-full-redraw | sed 's/true/full/; s/false/clipped/')   (full = no flicker squares, more GPU)"
+        local panel docks
+        panel=$(runtime_field glass.panel)
+        docks=$(runtime_field glass.docks)
+        [[ -n "$panel" ]] && echo "now:        top bar=$panel docks=$docks"
+        return
+    fi
+    local key
+    case "$1" in
+        on)  gs set "$SCHEMA" glass true;  echo "glass: on"; return ;;
+        off) gs set "$SCHEMA" glass false; echo "glass: off (the dock goes back to its own transparency settings)"; return ;;
+        redraw)
+            [[ $# -eq 2 ]] || die "usage: neowallpaperlive glass redraw full|clipped"
+            case "$2" in
+                full)    gs set "$SCHEMA" glass-full-redraw true;  echo "glass redraw: full" ;;
+                clipped) gs set "$SCHEMA" glass-full-redraw false; echo "glass redraw: clipped (cheaper; dark squares may flicker around hovered icons)" ;;
+                *) die "usage: neowallpaperlive glass redraw full|clipped" ;;
+            esac
+            return ;;
+        blur)       key=glass-radius ;;
+        opacity)    key=glass-opacity ;;
+        brightness) key=glass-brightness ;;
+        *) die "usage: neowallpaperlive glass [on|off|blur N|opacity X|brightness X|redraw full|clipped]" ;;
+    esac
+    [[ $# -eq 2 ]] || die "usage: neowallpaperlive glass $1 VALUE"
+    if [[ "$key" == glass-radius ]]; then
+        [[ "$2" =~ ^[0-9]+$ ]] && (( $2 <= 200 )) || die "blur must be a whole number from 0 to 200, got: $2"
+    else
+        [[ "$2" =~ ^(0|1|0?\.[0-9]+|1\.0+)$ ]] || die "$1 must be a number from 0 to 1, got: $2"
+    fi
+    gs set "$SCHEMA" "$key" "$2"
+    echo "glass $1: $2"
+}
+
 cmd_autopause() {
     check_installed
     if [[ $# -eq 0 ]]; then
@@ -247,6 +304,7 @@ cmd_status() {
     echo "enabled:    $(gs get "$SCHEMA" enabled)"
     echo "fill-mode:  $(gs get "$SCHEMA" fill-mode)"
     echo "keep-awake: $(gs get "$SCHEMA" keep-awake)"
+    echo "glass:      $(gs get "$SCHEMA" glass) (blur=$(gs get "$SCHEMA" glass-radius) opacity=$(gs get "$SCHEMA" glass-opacity) brightness=$(gs get "$SCHEMA" glass-brightness))"
     echo "autopause:  covered=$(gs get "$SCHEMA" pause-when-covered) fullscreen=$(gs get "$SCHEMA" pause-on-fullscreen) battery=$(gs get "$SCHEMA" pause-on-battery)"
     echo "mpv-args:   $(gs get "$SCHEMA" mpv-extra-args)"
     echo "runtime:"
@@ -271,6 +329,7 @@ cmd_uninstall() {
         # Release the keep-awake inhibitor first, then stop playback; the
         # running extension reacts to both before it is disabled below.
         gs set "$SCHEMA" keep-awake false 2>/dev/null || true
+        gs set "$SCHEMA" glass false 2>/dev/null || true   # gives the dock its own transparency back
         gs set "$SCHEMA" enabled false 2>/dev/null || true
         sleep 0.5
     fi
@@ -303,6 +362,7 @@ main() {
         status)         cmd_status ;;
         fill)           cmd_fill "$@" ;;
         awake)          cmd_awake "$@" ;;
+        glass)          cmd_glass "$@" ;;
         autopause)      cmd_autopause "$@" ;;
         mpv-args)       cmd_mpv_args "$@" ;;
         log)            cmd_log ;;

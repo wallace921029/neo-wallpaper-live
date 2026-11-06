@@ -31,9 +31,10 @@ neowallpaperlive exit                     # 恢复静态壁纸
 | **自动暂停** | 所有屏幕都被窗口盖住、有全屏应用在前台，或（可选）使用电池时 |
 | **防休眠**（`awake on`） | 播放期间不自动挂起、不息屏；默认关闭，`exit`、锁屏、卸载时自动释放 |
 | 稳健 | 登录后自动恢复；锁屏时停止；休眠前暂停，唤醒后若 GPU 复位导致卡死则重启渲染器；渲染器崩溃自动重启（带退避） |
+| **磨砂玻璃**（`glass on`） | 顶栏和左侧 Ubuntu Dock 把身后的内容（壁纸、视频、经过的窗口）模糊并变半透明；默认关闭，`glass off` 精确还原 |
 | mpv 能播的格式都行，永远静音 | mp4、mkv、webm、mov、gif…… |
 
-**不支持：** X11 · GNOME 50 以外的版本（`install.sh --force` 可强行尝试）· 每块屏不同视频 · 锁屏/登录界面 · 播放列表、定时、网络源 · 图形界面。概览里工作区的圆角不作用于视频。
+**不支持：** X11 · GNOME 50 以外的版本（`install.sh --force` 可强行尝试）· 每块屏不同视频 · 锁屏/登录界面 · 播放列表、定时、网络源 · 图形界面。概览里工作区的圆角不作用于视频。磨砂玻璃只作用于顶栏和 Dock，不包括应用自己的标题栏。
 
 ## 依赖
 
@@ -44,13 +45,19 @@ neowallpaperlive exit                     # 恢复静态壁纸
 | `glib-compile-schemas` | `which glib-compile-schemas` | `libglib2.0-bin` |
 | `git`、`python3`、`gnome-extensions` | | `git`（其余系统自带） |
 
-```bash
-sudo apt install mpv libglib2.0-bin git
-```
+**`./install.sh` 会替你装这些包**（先询问，用 `sudo`）。它根据你的显卡算出完整清单，逐个检查，只装缺的，所以全新的电脑也能一次装齐：
 
-强烈建议启用硬件解码（软解 4K 会吃满一个核）：AMD / Intel 用 `mesa-va-drivers`（Ubuntu 默认已装），NVIDIA 用 ≥ 535 的闭源驱动。检查：`mpv --hwdec=auto-safe --msg-level=vd=v FILE` → 出现 `Using hardware decoding`。
+| 适用 | 包 |
+|---|---|
+| 所有机器 | `mpv`、`libglib2.0-bin`、`python3` |
+| Intel 显卡（Broadwell 及更新） | `intel-media-va-driver` |
+| AMD 显卡 | Mesa 的 VA-API 驱动（旧版 Ubuntu 是 `mesa-va-drivers`，新版包含在 `libgl1-mesa-dri` 里） |
+| NVIDIA 显卡 | ≥ 535 的闭源驱动，脚本**不会**代装（内核模块，开启 Secure Boot 时还要设密码）：`sudo ubuntu-drivers install` |
+| Intel / AMD | `vainfo`（很小；安装脚本靠它确认硬解可用） |
 
-仅开发需要：`ffmpeg`、`gjs`、`bc`。
+手动安装（Intel）：`sudo apt install mpv libglib2.0-bin python3 intel-media-va-driver vainfo`。硬解很重要：没有它，4K 视频会吃满一个 CPU 核。只有显卡驱动不够，上面的 *VA-API* 驱动也必须装。检查：`vainfo`（应列出 `VAProfileH264…`）；壁纸播放后看 `neowallpaperlive status` → `mpv.hwdec-current` 应为 `vaapi`，不是 `no`。
+
+仅开发需要（`./install.sh --dev` 会一并装）：`ffmpeg`、`gjs`、`bc`。
 
 ## 安装
 
@@ -60,7 +67,7 @@ cd neo-wallpaper-live
 ./install.sh                 # 或：./install.sh --video ~/Videos/ocean.mp4
 ```
 
-装在用户目录，无需 `sudo`：扩展到 `~/.local/share/gnome-shell/extensions/`，命令行工具到 `~/.local/bin/neowallpaperlive`。
+扩展装到 `~/.local/share/gnome-shell/extensions/`，命令行工具装到 `~/.local/bin/neowallpaperlive`，这两步不需要 `sudo`。只有装包这一步用 `sudo`，而且先列出要装什么、征得同意才执行。`--yes` 免询问，`--no-deps` 跳过这一步；没有终端（脚本、CI）时只打印命令，不执行。
 
 **每次安装或更新后都要注销再登录**——Wayland 下 GNOME Shell 只在登录时加载扩展代码。更新：`git pull && ./install.sh`。
 
@@ -74,6 +81,9 @@ neowallpaperlive status            设置 + 实时状态
 neowallpaperlive fill MODE         cover（默认）| contain | stretch
 neowallpaperlive awake on|off      播放期间保持电脑唤醒（默认关）
 neowallpaperlive autopause [RULE on|off]   RULE = covered（开）| fullscreen（开）| battery（关）
+neowallpaperlive glass [on|off]    顶栏和 Dock 磨砂（默认关）；不带参数显示当前设置
+neowallpaperlive glass blur N | opacity X | brightness X   模糊半径 0–200（40）· 着色 0–1（0.35）· 亮度 0–1（0.9）
+neowallpaperlive glass redraw full|clipped   full（默认）防止悬停时图标周围闪深色方块；clipped 更省 GPU
 neowallpaperlive mpv-args [ARG…]   额外的 mpv 参数；不带参数则清空
 neowallpaperlive log               跟踪扩展日志
 neowallpaperlive uninstall         移除全部文件、重置设置（注销后彻底卸载）
@@ -88,6 +98,7 @@ neowallpaperlive uninstall         移除全部文件、重置设置（注销后
 | `set` 提示需要注销再登录 | 安装/更新后的正常现象 |
 | 显示静态壁纸，`status` → `playing: false` | `neowallpaperlive log` 会转发 mpv 的报错；用 `mpv FILE` 直接测试 |
 | CPU 占用高 | `status` → `mpv.hwdec-current` 为 `no`：安装上面的硬解包 |
+| 开着磨砂时，悬停顶栏项目或 dock 图标，周围闪深色方块 | `neowallpaperlive glass redraw` 应显示 `full`；`clipped` 会让它们回来（Mutter 只重画悬停的那一小块，模糊于是读到了自己上一帧的输出） |
 | 画面发绿 / 花屏 | `mpv-args --vo=gpu-next`，或 `--hwdec=no` 排除解码器问题 |
 | `awake on` 了仍然息屏 | 播放时 `status` → `keepAwake.active` 应为 `true`（有 `error` 说明没有 gnome-session）；用 `gnome-session-inhibit --list` 查看其他 inhibitor |
 | 新插的显示器上没有视频 | `status` → `layers` 应 ≥ 显示器数；否则 `exit && start` |
@@ -116,6 +127,7 @@ extension/neowallpaperlive@local/
   modules/wallpaper.js  把 clone 放进背景 actor
   modules/fit.js        填充模式几何计算（纯函数，有单元测试）
   modules/stealth.js    从窗口列表 / dock 中隐藏渲染窗口
+  modules/glass.js      顶栏和 dock 的磨砂（Shell.BlurEffect + 着色）
   modules/control.js    D-Bus 状态接口（NWL_TEST=1 时附带测试钩子）
 bin/neowallpaperlive    命令行工具
 install.sh              安装脚本
@@ -132,9 +144,10 @@ tools/regression.sh             # 全部场景 + 断言，约 15 分钟
 tools/regression.sh smoke sleep # 只跑指定场景
 tools/headless-test.sh smoke    # 单个场景，输出原始表格
 gjs -m tools/fit-test.js        # 填充数学单元测试，不需要合成器
+tools/install-test.sh           # install.sh 的装包逻辑，在"描述出来的机器"上测（Intel、AMD、NVIDIA、双显卡、虚拟机……），不会装任何东西
 ```
 
-场景：`smoke`（播放、隐身、工作区、概览、填充模式、exit/start）、`soak`、`autopause`、`pin`、`sleep`（休眠唤醒、渲染器挂死）、`switch`（原地换片）、`geom`（dock 尺寸的 strut 让渲染窗口内缩）、`appgrid`（开着视频时应用抽屉的预览保持原尺寸）。单元测试覆盖虚拟显示器造不出来的输入：分数缩放和客户端自绘阴影。
+场景：`smoke`（播放、隐身、工作区、概览、填充模式、exit/start）、`soak`、`autopause`、`pin`、`sleep`（休眠唤醒、渲染器挂死）、`switch`（原地换片）、`geom`（dock 尺寸的 strut 让渲染窗口内缩）、`appgrid`（开着视频时应用抽屉的预览保持原尺寸）、`glass`（模糊确实抹平了顶栏和 dock 下的细节、概览、禁用再启用、dock 设置精确还原）。单元测试覆盖虚拟显示器造不出来的输入：分数缩放和客户端自绘阴影。
 
 原始表格：`mpv-pos` 持续前进，`drop` 保持 0，`playing` 为 `True`，`layers` 为 2（概览打开时更多），`ipc` 为 `<解码器>/<扩展报告的暂停>/<mpv 实际的暂停>`，两个暂停标志一致。每次采样的完整 `status` 以 JSON 保存在对应截图旁。
 

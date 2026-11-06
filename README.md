@@ -31,9 +31,10 @@ neowallpaperlive exit                     # back to the static wallpaper
 | **Auto-pause** | when every monitor is covered, a fullscreen app is on top, or (opt-in) on battery |
 | **Keep-awake** (`awake on`) | no auto-suspend or idle blanking while playing; off by default, released on `exit`, lock and uninstall |
 | Resilient | remembered across logins; stops on lock; paused across suspend and restarted if the GPU reset froze it; crashed renderer respawned with back-off |
+| **Frosted glass** (`glass on`) | the top bar and the left Ubuntu Dock blur what is behind them (wallpaper, video, windows passing by) and turn translucent; off by default, undone exactly on `glass off` |
 | Any format mpv plays, no audio | mp4, mkv, webm, mov, gif, … |
 
-**Not supported:** X11 · GNOME other than 50 (`install.sh --force` to try) · different videos per monitor · lock/login screen · playlists, schedules, network sources · GUI. The overview's rounded workspace corners are not applied to the video.
+**Not supported:** X11 · GNOME other than 50 (`install.sh --force` to try) · different videos per monitor · lock/login screen · playlists, schedules, network sources · GUI. The overview's rounded workspace corners are not applied to the video. Frosted glass covers the top bar and the dock only, not application title bars.
 
 ## Requirements
 
@@ -44,13 +45,19 @@ neowallpaperlive exit                     # back to the static wallpaper
 | `glib-compile-schemas` | `which glib-compile-schemas` | `libglib2.0-bin` |
 | `git`, `python3`, `gnome-extensions` | | `git` (others preinstalled) |
 
-```bash
-sudo apt install mpv libglib2.0-bin git
-```
+**`./install.sh` installs the packages for you** (after asking, with `sudo`). It works out the full list from your graphics card, checks each package, and installs only what is missing, so a fresh computer gets everything:
 
-Hardware decoding is strongly recommended (software-decoding 4K burns a core): `mesa-va-drivers` for AMD / Intel (default on Ubuntu), proprietary driver ≥ 535 for NVIDIA. Check with `mpv --hwdec=auto-safe --msg-level=vd=v FILE` → `Using hardware decoding`.
+| Needed on | Package |
+|---|---|
+| every machine | `mpv`, `libglib2.0-bin`, `python3` |
+| Intel graphics (Broadwell and newer) | `intel-media-va-driver` |
+| AMD graphics | Mesa's VA-API driver (`mesa-va-drivers` on older Ubuntu, part of `libgl1-mesa-dri` on newer) |
+| NVIDIA graphics | proprietary driver ≥ 535, **not** installed by the script (kernel module; Secure Boot asks for a password): `sudo ubuntu-drivers install` |
+| Intel / AMD | `vainfo` (tiny; the installer uses it to confirm hardware decoding works) |
 
-Development only: `ffmpeg`, `gjs`, `bc`.
+By hand: `sudo apt install mpv libglib2.0-bin python3 intel-media-va-driver vainfo` (Intel). Hardware decoding matters: without it a 4K video burns a CPU core. A graphics driver alone is not enough, the *VA-API* driver above must be there too. Check with `vainfo` (should list `VAProfileH264…`) and, once the wallpaper plays, `neowallpaperlive status` → `mpv.hwdec-current` should be `vaapi`, not `no`.
+
+Development only (`./install.sh --dev` adds them): `ffmpeg`, `gjs`, `bc`.
 
 ## Install
 
@@ -60,7 +67,7 @@ cd neo-wallpaper-live
 ./install.sh                 # or: ./install.sh --video ~/Videos/ocean.mp4
 ```
 
-User-local, no `sudo`: extension to `~/.local/share/gnome-shell/extensions/`, CLI to `~/.local/bin/neowallpaperlive`.
+The extension goes to `~/.local/share/gnome-shell/extensions/` and the CLI to `~/.local/bin/neowallpaperlive`, no `sudo` needed for those. Only the package step uses `sudo`, and only after listing what it will install and asking. `--yes` skips the question, `--no-deps` skips the step; with no terminal (a script, CI) it prints the command instead of running it.
 
 **Log out and back in after every install or update** — GNOME Shell on Wayland only loads extension code at login. Update with `git pull && ./install.sh`.
 
@@ -74,6 +81,9 @@ neowallpaperlive status            settings + live state
 neowallpaperlive fill MODE         cover (default) | contain | stretch
 neowallpaperlive awake on|off      keep the computer awake while playing (default off)
 neowallpaperlive autopause [RULE on|off]   RULE = covered (on) | fullscreen (on) | battery (off)
+neowallpaperlive glass [on|off]    frosted top bar and dock (default off); no argument shows the settings
+neowallpaperlive glass blur N | opacity X | brightness X   radius 0–200 (40) · tint 0–1 (0.35) · 0–1 (0.9)
+neowallpaperlive glass redraw full|clipped   full (default) stops dark squares flickering around hovered icons; clipped is cheaper
 neowallpaperlive mpv-args [ARG…]   extra mpv flags; no args clears them
 neowallpaperlive log               follow the extension's log
 neowallpaperlive uninstall         remove everything, reset settings (log out to fully unload)
@@ -90,6 +100,7 @@ Tips: use a video at least as large as your biggest monitor, ideally a 10–60 s
 | High CPU | `status` → `mpv.hwdec-current` is `no`: install the decoding packages above |
 | Green / garbled frames | `mpv-args --vo=gpu-next`, or `--hwdec=no` to rule out the decoder |
 | `awake on` but the screen still blanks | `status` → `keepAwake.active` must be `true` while playing (`error` set means no gnome-session); check `gnome-session-inhibit --list` |
+| Dark squares flicker around a hovered top-bar item or dock icon with glass on | `neowallpaperlive glass redraw` should say `full`; `clipped` brings them back (Mutter repaints only the hovered rectangle and the blur then reads its own old output) |
 | Video missing on a newly plugged monitor | `status` → `layers` ≥ monitor count; otherwise `exit && start` |
 | Wallpaper strip along the right/bottom edge, or app grid shows a video band instead of desktop previews | fixed — update and log in again. If it persists, send `status`: every `layerBoxes` entry with `mapped: true` needs a `clone` box covering its `layer` box |
 
@@ -116,6 +127,7 @@ extension/neowallpaperlive@local/
   modules/wallpaper.js  clones into background actors
   modules/fit.js        fill-mode geometry (pure, unit-tested)
   modules/stealth.js    hide the renderer from window lists / dock
+  modules/glass.js      frosted top bar and dock (Shell.BlurEffect + tint)
   modules/control.js    D-Bus status (+ test hooks when NWL_TEST=1)
 bin/neowallpaperlive    CLI
 install.sh              installer
@@ -132,9 +144,10 @@ tools/regression.sh             # all scenarios + assertions, ~15 min
 tools/regression.sh smoke sleep # selected scenarios
 tools/headless-test.sh smoke    # one scenario, raw table
 gjs -m tools/fit-test.js        # fill-maths unit tests, no compositor needed
+tools/install-test.sh           # install.sh's package logic on described machines (Intel, AMD, NVIDIA, hybrid, VM, ...); installs nothing
 ```
 
-Scenarios: `smoke` (playback, stealth, workspaces, overview, fill modes, exit/start), `soak`, `autopause`, `pin`, `sleep` (suspend/resume, hung renderer), `switch` (in-place file change), `geom` (dock-sized strut insets the renderer), `appgrid` (previews keep their size with the video on). Unit tests cover what virtual monitors can't produce: fractional scaling and client-side shadows.
+Scenarios: `smoke` (playback, stealth, workspaces, overview, fill modes, exit/start), `soak`, `autopause`, `pin`, `sleep` (suspend/resume, hung renderer), `switch` (in-place file change), `geom` (dock-sized strut insets the renderer), `appgrid` (previews keep their size with the video on), `glass` (blur really flattens detail under the bar and the dock, overview, disable/enable, dock settings restored). Unit tests cover what virtual monitors can't produce: fractional scaling and client-side shadows.
 
 Raw table: `mpv-pos` advances, `drop` stays 0, `playing` is `True`, `layers` is 2 (more with the overview open), `ipc` is `<decoder>/<extension's pause>/<mpv's pause>` with both flags agreeing. Each sample's full `status` is saved as JSON beside its screenshot.
 
