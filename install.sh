@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-# Installs NeoWallpaperLive for the current user (no root needed).
-#   ./install.sh                 install / update
+# Installs NeoWallpaperLive for the current user. The extension and the CLI need
+# no root; the packages they depend on (mpv, the hardware-decoding driver for
+# your graphics card, ...) are installed with sudo, and only after asking.
+#   ./install.sh                 install / update; offers to install missing packages
 #   ./install.sh --video FILE    install and start playing FILE
+#   ./install.sh --yes           install missing packages without asking
+#   ./install.sh --no-deps       never touch packages
+#   ./install.sh --dev           also install the tools the test suite needs
 #   ./install.sh --force         skip the GNOME 50 / Wayland checks
 set -euo pipefail
 
@@ -12,12 +17,15 @@ EXT_DIR="$DATA_HOME/gnome-shell/extensions/$UUID"
 BIN_DIR="$HOME/.local/bin"
 APPS_DIR="$DATA_HOME/applications"
 
-FORCE=0; VIDEO=""
+FORCE=0; VIDEO=""; ASSUME_YES=0; NO_DEPS=0; WITH_DEV=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --force) FORCE=1 ;;
         --video) VIDEO=${2:-}; shift ;;
-        -h|--help) sed -n '2,6p' "$0"; exit 0 ;;
+        -y|--yes) ASSUME_YES=1 ;;
+        --no-deps) NO_DEPS=1 ;;
+        --dev) WITH_DEV=1 ;;
+        -h|--help) sed -n '2,/^set /p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
     shift
@@ -26,6 +34,13 @@ done
 info() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33mwarning:\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+
+# ---- packages ---------------------------------------------------------------
+# shellcheck source=install-deps.sh
+source "$SRC_DIR/install-deps.sh"
+if [[ $NO_DEPS -eq 0 ]]; then
+    install_deps "$ASSUME_YES" "$WITH_DEV"
+fi
 
 # ---- requirements -----------------------------------------------------------
 info "Checking requirements"
