@@ -54,16 +54,7 @@ neowallpaperlive exit                     # 停止，恢复普通壁纸
 neowallpaperlive start                    # 再次播放记住的视频
 ```
 
-**顶栏和 Dock 的磨砂玻璃**（默认关闭）：
-
-```bash
-neowallpaperlive glass on                 # 打开
-neowallpaperlive glass off                # 关闭；Dock 会精确恢复原样
-neowallpaperlive glass opacity 0.2        # 更透明（0 到 1）
-neowallpaperlive glass blur 60            # 更模糊（0 到 200）
-```
-
-**更多选项：**
+**更多选项**（磨砂玻璃在下面有[单独一节](#磨砂玻璃顶栏和-dock)）：
 
 ```bash
 neowallpaperlive fill contain             # 完整显示整个视频而不裁剪（cover | contain | stretch）
@@ -75,6 +66,33 @@ neowallpaperlive uninstall                # 全部卸载
 ```
 
 小提示：视频分辨率最好不低于你最大的那块屏幕，最好是 10–60 秒、首尾衔接自然的循环视频。
+
+## 磨砂玻璃（顶栏和 Dock）
+
+把顶栏和左侧 Dock 变成磨砂玻璃：它们身后的东西（你的视频、壁纸、路过的窗口）会模糊地透出来，上面再盖一层淡淡的着色。默认关闭，不需要装别的扩展。
+
+```bash
+neowallpaperlive glass on                 # 打开
+neowallpaperlive glass off                # 关闭；Dock 会精确恢复原样
+neowallpaperlive glass                    # 查看当前设置
+```
+
+调整效果，每项设置都会被记住：
+
+```bash
+neowallpaperlive glass opacity 0.2        # 着色深浅：0 = 完全透明，1 = 不透明（默认 0.35）
+neowallpaperlive glass blur 60            # 模糊程度：0 到 200（默认 40）
+neowallpaperlive glass brightness 0.8     # 模糊后画面的亮度：0 到 1（默认 0.9）
+```
+
+需要知道：
+
+- 修改立即生效，不用注销。（第一次安装后，和任何更新一样，需要注销再登录。）
+- 只作用于顶栏和 Dock，不包括应用自己的标题栏。
+- 针对 Ubuntu 默认的 Dock 设计：满高、靠左。悬浮式 Dock 周围会露出一块模糊的矩形。
+- 打开概览（活动）时，顶栏会恢复成普通样子。
+- 开着磨砂时，每次变化都会整屏重画，这样才不会在悬停图标时周围闪深色方块。代价是多占一些 GPU；如果你愿意，`neowallpaperlive glass redraw clipped` 会少重画一些，但方块可能回来。`neowallpaperlive glass redraw full` 恢复默认。
+- 开着磨砂时如果你改了 Dock 自己的透明度设置，`glass off` 会还原成打开磨砂之前的值。
 
 ## 遇到问题
 

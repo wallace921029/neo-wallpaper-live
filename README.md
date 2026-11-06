@@ -54,16 +54,7 @@ neowallpaperlive exit                     # stop, show the normal wallpaper agai
 neowallpaperlive start                    # play the remembered video again
 ```
 
-**Frosted glass** for the top bar and the dock (off by default):
-
-```bash
-neowallpaperlive glass on                 # turn it on
-neowallpaperlive glass off                # turn it off; the dock goes back exactly as it was
-neowallpaperlive glass opacity 0.2        # more see-through (0 to 1)
-neowallpaperlive glass blur 60            # blurrier (0 to 200)
-```
-
-**More options:**
+**More options** (frosted glass has [its own section](#frosted-glass-top-bar-and-dock) below):
 
 ```bash
 neowallpaperlive fill contain             # fit the whole video instead of cropping (cover | contain | stretch)
@@ -75,6 +66,33 @@ neowallpaperlive uninstall                # remove everything
 ```
 
 Tips: use a video at least as large as your biggest screen, ideally a 10–60 second loop that starts and ends the same.
+
+## Frosted glass (top bar and dock)
+
+Turns the top bar and the left dock into frosted glass: whatever is behind them (your video, the wallpaper, a window passing by) shows through, blurred, under a light tint. It is off by default and needs no other extension.
+
+```bash
+neowallpaperlive glass on                 # turn it on
+neowallpaperlive glass off                # turn it off; the dock goes back exactly as it was
+neowallpaperlive glass                    # show the current settings
+```
+
+Tune the look. Each setting is remembered:
+
+```bash
+neowallpaperlive glass opacity 0.2        # how strong the tint is: 0 = clear glass, 1 = solid (default 0.35)
+neowallpaperlive glass blur 60            # how blurry: 0 to 200 (default 40)
+neowallpaperlive glass brightness 0.8     # how bright the blurred picture is: 0 to 1 (default 0.9)
+```
+
+Good to know:
+
+- Changes apply at once, no logout needed. (The first time, log out and back in after installing, like any update.)
+- It works on the top bar and on the dock. Application title bars are not touched.
+- It is built for Ubuntu's default dock: full height, on the left. A floating dock shows a blurred rectangle around itself.
+- The top bar goes back to plain while the overview (Activities) is open.
+- With glass on, the whole screen is redrawn on every change. That is what stops dark squares flickering around hovered icons. It costs some GPU; if you prefer, `neowallpaperlive glass redraw clipped` redraws less, but the squares can come back. `neowallpaperlive glass redraw full` goes back to the default.
+- If you change the dock's own transparency while glass is on, `glass off` restores the values it had before glass was turned on.
 
 ## If something is wrong
 
